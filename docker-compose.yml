@@ -1,0 +1,13 @@
+services:
+  web:
+    build: .
+    ports:
+      - "5000:5000"
+    volumes:
+      # Mount instance directory to persist database
+      - ./instance:/app/instance
+    environment:
+      - FLASK_APP=flaskr
+      - FLASK_ENV=production
+    restart: unless-stopped
+
