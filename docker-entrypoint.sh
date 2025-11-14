@@ -8,5 +8,7 @@ if [ ! -f instance/flaskr.sqlite ]; then
 fi
 
 # Run the Flask application
-exec flask run --host=0.0.0.0 --port=5000
+# Use PORT environment variable if set, otherwise default to 8080 (Cloud Run default)
+PORT=${PORT:-8080}
+exec flask run --host=0.0.0.0 --port=$PORT
 

@@ -27,8 +27,8 @@ RUN chmod +x /usr/local/bin/docker-entrypoint.sh
 # Create instance directory for database
 RUN mkdir -p instance
 
-# Expose port 5000
-EXPOSE 5000
+# Expose port 8080 (Cloud Run default, configurable via PORT env var)
+EXPOSE 8080
 
 # Set entrypoint
 ENTRYPOINT ["docker-entrypoint.sh"]
