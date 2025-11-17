@@ -39,7 +39,28 @@ jobs:
       - name: Build and submit container image
         id: build
         run: |-
-          gcloud builds submit --tag $GAR_LOCATION-docker.pkg.dev/$PROJECT_ID/cloud-run-source-deploy/$SERVICE_NAME:$GITHUB_SHA
+          # Submit build asynchronously to avoid log streaming permission issues
+          BUILD_ID=$(gcloud builds submit --async --tag $GAR_LOCATION-docker.pkg.dev/$PROJECT_ID/cloud-run-source-deploy/$SERVICE_NAME:$GITHUB_SHA --format="value(id)")
+          echo "Build submitted with ID: $BUILD_ID"
+          echo "View build logs at: https://console.cloud.google.com/cloud-build/builds/$BUILD_ID?project=$PROJECT_ID"
+          
+          # Poll for build completion (doesn't require log streaming permissions)
+          echo "Waiting for build to complete..."
+          while true; do
+            BUILD_STATUS=$(gcloud builds describe $BUILD_ID --project=$PROJECT_ID --format="value(status)" 2>/dev/null || echo "WORKING")
+            echo "Build status: $BUILD_STATUS"
+            
+            if [ "$BUILD_STATUS" = "SUCCESS" ]; then
+              echo "Build completed successfully!"
+              break
+            elif [ "$BUILD_STATUS" = "FAILURE" ] || [ "$BUILD_STATUS" = "CANCELLED" ] || [ "$BUILD_STATUS" = "EXPIRED" ] || [ "$BUILD_STATUS" = "TIMEOUT" ]; then
+              echo "Build failed with status: $BUILD_STATUS"
+              echo "View logs at: https://console.cloud.google.com/cloud-build/builds/$BUILD_ID?project=$PROJECT_ID"
+              exit 1
+            fi
+            
+            sleep 5
+          done
 
       # Step 2: Test
       - name: Set up Python
