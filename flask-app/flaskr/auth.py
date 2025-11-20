@@ -106,7 +106,7 @@ def google_callback():
                 if is_postgres(db):
                     cursor = db.cursor()
                     cursor.execute(
-                        "INSERT INTO user (username, email, google_id, name, picture) VALUES (%s, %s, %s, %s, %s) RETURNING id",
+                        'INSERT INTO "user" (username, email, google_id, name, picture) VALUES (%s, %s, %s, %s, %s) RETURNING id',
                         (username, email, google_id, name, picture),
                     )
                     result = cursor.fetchone()
@@ -140,7 +140,7 @@ def google_callback():
                 if is_postgres(db):
                     cursor = db.cursor()
                     cursor.execute(
-                        "UPDATE user SET google_id = %s, name = %s, picture = %s WHERE id = %s",
+                        'UPDATE "user" SET google_id = %s, name = %s, picture = %s WHERE id = %s',
                         (google_id, name, picture, user["id"]),
                     )
                     db.commit()

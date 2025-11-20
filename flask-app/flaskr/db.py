@@ -1,4 +1,5 @@
 import os
+import re
 import sqlite3
 
 import click
@@ -129,10 +130,18 @@ def execute_query(db, query, params=None):
     """Execute a query that works with both SQLite and PostgreSQL.
     
     Returns a cursor-like object that has fetchone() and fetchall() methods.
-    For PostgreSQL, converts ? placeholders to %s.
+    For PostgreSQL, converts ? placeholders to %s and quotes reserved keywords.
     """
     if is_postgres(db):
-        # PostgreSQL - use %s placeholders
+        # PostgreSQL - use %s placeholders and quote reserved keywords
+        # Quote 'user' table name (reserved keyword in PostgreSQL)
+        # Replace 'user' table name with quoted version, but only when it's a table reference
+        # Match: FROM user, INTO user, UPDATE user, REFERENCES user
+        query = re.sub(r'\bFROM\s+user\b', 'FROM "user"', query, flags=re.IGNORECASE)
+        query = re.sub(r'\bINTO\s+user\b', 'INTO "user"', query, flags=re.IGNORECASE)
+        query = re.sub(r'\bUPDATE\s+user\b', 'UPDATE "user"', query, flags=re.IGNORECASE)
+        query = re.sub(r'\bREFERENCES\s+user\b', 'REFERENCES "user"', query, flags=re.IGNORECASE)
+        
         if params:
             # Convert ? to %s in query
             query = query.replace('?', '%s')
@@ -172,7 +181,14 @@ def init_db():
         
         if is_postgres_db:
             # PostgreSQL - execute statements one by one
-            # Replace SERIAL with appropriate syntax for PostgreSQL
+            # Quote reserved keywords like 'user' for PostgreSQL
+            schema = schema.replace('CREATE TABLE user', 'CREATE TABLE "user"')
+            schema = schema.replace('DROP TABLE IF EXISTS user', 'DROP TABLE IF EXISTS "user"')
+            schema = schema.replace('REFERENCES user (', 'REFERENCES "user" (')
+            schema = schema.replace('FROM user WHERE', 'FROM "user" WHERE')
+            schema = schema.replace('INTO user (', 'INTO "user" (')
+            schema = schema.replace('UPDATE user SET', 'UPDATE "user" SET')
+            
             cursor = db.cursor()
             statements = [s.strip() for s in schema.split(';') if s.strip() and not s.strip().startswith('--')]
             for statement in statements:
