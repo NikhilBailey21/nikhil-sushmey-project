@@ -11,8 +11,11 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     FLASK_ENV=production
 
 # Copy requirements and install Python dependencies
+# Install psycopg2-binary first to ensure it's available for the connector
 COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+RUN pip install --no-cache-dir --upgrade pip && \
+    pip install --no-cache-dir psycopg2-binary>=2.9.0 && \
+    pip install --no-cache-dir -r requirements.txt
 
 # Copy application code
 COPY . .

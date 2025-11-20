@@ -31,7 +31,11 @@ def get_db():
                 # Use Cloud SQL Python Connector with psycopg2
                 from google.cloud.sql.connector import Connector
                 
-                connector = Connector()
+                # Initialize connector (reuse across requests for better performance)
+                if "connector" not in g:
+                    g.connector = Connector()
+                
+                connector = g.connector
                 
                 # Build connection parameters from environment variables
                 db_user = os.environ.get("DB_USER", "postgres")
@@ -39,13 +43,14 @@ def get_db():
                 db_name = os.environ.get("DB_NAME", "flaskr")
                 
                 def getconn():
+                    # Use the connector to get a connection
+                    # The connector.connect() method returns a psycopg2 connection
                     conn = connector.connect(
                         cloud_sql_connection_name,
                         "psycopg2",
                         user=db_user,
                         password=db_pass,
                         db=db_name,
-                        cursor_factory=RealDictCursor,
                     )
                     return conn
                 
@@ -68,6 +73,9 @@ def close_db(e=None):
 
     if db is not None:
         db.close()
+    
+    # Note: We don't close the connector here as it can be reused
+    # The connector will be cleaned up when the app context is torn down
 
 
 def is_postgres(db):
@@ -86,7 +94,9 @@ def execute_query(db, query, params=None):
         if params:
             # Convert ? to %s in query
             query = query.replace('?', '%s')
-        cursor = db.cursor()
+        # Use RealDictCursor for PostgreSQL to get dict-like rows
+        from psycopg2.extras import RealDictCursor
+        cursor = db.cursor(cursor_factory=RealDictCursor)
         if params:
             cursor.execute(query, params)
         else:
