@@ -48,10 +48,11 @@ class AuthActions:
     def __init__(self, client):
         self._client = client
 
-    def login(self, username="test", password="test"):
-        return self._client.post(
-            "/auth/login", data={"username": username, "password": password}
-        )
+    def login(self, user_id=1):
+        """Login by setting the session directly (since we use Google OAuth now)."""
+        with self._client.session_transaction() as sess:
+            sess['user_id'] = user_id
+        return self._client.get("/")  # Return a response to match old API
 
     def logout(self):
         return self._client.get("/auth/logout")

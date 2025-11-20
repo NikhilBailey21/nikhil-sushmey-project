@@ -67,11 +67,11 @@ Test
 
 ::
 
-    $ pip install '.[test]'
-    $ pytest
+    $ cd flask-app && pytest tests/ -v
 
 Run with coverage report::
 
-    $ coverage run -m pytest
+    $ cd flask-app
+    $ coverage run -m pytest tests/
     $ coverage report
     $ coverage html  # open htmlcov/index.html in a browser
