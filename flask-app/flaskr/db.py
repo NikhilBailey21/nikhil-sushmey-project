@@ -28,8 +28,9 @@ def get_db():
                 # Direct connection string (for local testing with Cloud SQL proxy)
                 g.db = psycopg2.connect(database_url, cursor_factory=RealDictCursor)
             else:
-                # Use Cloud SQL Python Connector with psycopg2
+                # Use Cloud SQL Python Connector with pg8000 (Google's recommended driver)
                 from google.cloud.sql.connector import Connector
+                import pg8000
                 
                 # Initialize connector (reuse across requests for better performance)
                 if "connector" not in g:
@@ -43,11 +44,11 @@ def get_db():
                 db_name = os.environ.get("DB_NAME", "flaskr")
                 
                 def getconn():
-                    # Use the connector to get a connection
-                    # The connector.connect() method returns a psycopg2 connection
+                    # Use the connector to get a connection with pg8000
+                    # pg8000 returns dict-like rows by default, compatible with our code
                     conn = connector.connect(
                         cloud_sql_connection_name,
-                        "psycopg2",
+                        "pg8000",
                         user=db_user,
                         password=db_pass,
                         db=db_name,
@@ -83,6 +84,47 @@ def is_postgres(db):
     return hasattr(db, 'cursor') and not isinstance(db, sqlite3.Connection)
 
 
+def is_pg8000(db):
+    """Check if database connection is pg8000."""
+    # Check by module name or by checking for pg8000-specific attributes
+    db_type = type(db)
+    return (hasattr(db_type, '__module__') and 'pg8000' in str(db_type.__module__)) or \
+           hasattr(db, 'run')  # pg8000 has a 'run' method
+
+
+class Pg8000DictCursor:
+    """Wrapper to make pg8000 cursor return dict-like rows."""
+    def __init__(self, cursor):
+        self._cursor = cursor
+        self._columns = None
+    
+    def execute(self, query, params=None):
+        result = self._cursor.execute(query, params)
+        # Get column names from cursor description
+        if self._cursor.description:
+            self._columns = [desc[0] for desc in self._cursor.description]
+        return result
+    
+    def fetchone(self):
+        row = self._cursor.fetchone()
+        if row and self._columns:
+            return dict(zip(self._columns, row))
+        return row
+    
+    def fetchall(self):
+        rows = self._cursor.fetchall()
+        if rows and self._columns:
+            return [dict(zip(self._columns, row)) for row in rows]
+        return rows
+    
+    def close(self):
+        return self._cursor.close()
+    
+    @property
+    def lastrowid(self):
+        return getattr(self._cursor, 'lastrowid', None)
+
+
 def execute_query(db, query, params=None):
     """Execute a query that works with both SQLite and PostgreSQL.
     
@@ -94,14 +136,22 @@ def execute_query(db, query, params=None):
         if params:
             # Convert ? to %s in query
             query = query.replace('?', '%s')
-        # Use RealDictCursor for PostgreSQL to get dict-like rows
-        from psycopg2.extras import RealDictCursor
-        cursor = db.cursor(cursor_factory=RealDictCursor)
-        if params:
-            cursor.execute(query, params)
+        
+        # Check if using pg8000 (Cloud SQL) or psycopg2 (direct connection)
+        if is_pg8000(db):
+            # pg8000 connection - wrap cursor to return dict-like rows
+            cursor = db.cursor()
+            wrapped_cursor = Pg8000DictCursor(cursor)
         else:
-            cursor.execute(query)
-        return cursor
+            # psycopg2 connection (for DATABASE_URL direct connections)
+            from psycopg2.extras import RealDictCursor
+            wrapped_cursor = db.cursor(cursor_factory=RealDictCursor)
+        
+        if params:
+            wrapped_cursor.execute(query, params)
+        else:
+            wrapped_cursor.execute(query)
+        return wrapped_cursor
     else:
         # SQLite - use ? placeholders
         if params:
