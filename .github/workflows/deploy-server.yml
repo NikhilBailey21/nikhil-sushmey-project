@@ -1,10 +1,13 @@
-name: Deploy to Cloud Run
+name: Deploy Flask App (Server)
 
 on:
   push:
     branches:
       - main
       - master
+    paths:
+      - 'flask-app/**'
+      - '.github/workflows/deploy-server.yml'
   workflow_dispatch: # Allows manual triggering
 
 env:
@@ -35,9 +38,32 @@ jobs:
       - name: Configure Docker for GCR
         run: gcloud auth configure-docker $GAR_LOCATION-docker.pkg.dev --quiet
 
-      # Step 1: Build
+      # Step 1: Test
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        working-directory: ./flask-app
+        run: |-
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pytest
+
+      - name: Install application
+        working-directory: ./flask-app
+        run: pip install -e .
+
+      - name: Run tests
+        id: test
+        working-directory: ./flask-app
+        run: pytest tests/ -v
+
+      # Step 2: Build
       - name: Build and submit container image
         id: build
+        working-directory: ./flask-app
         run: |-
           # Submit build asynchronously to avoid log streaming permission issues
           BUILD_ID=$(gcloud builds submit --async --tag $GAR_LOCATION-docker.pkg.dev/$PROJECT_ID/cloud-run-source-deploy/$SERVICE_NAME:$GITHUB_SHA --format="value(id)")
@@ -61,25 +87,6 @@ jobs:
             
             sleep 5
           done
-
-      # Step 2: Test
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.11'
-
-      - name: Install dependencies
-        run: |-
-          python -m pip install --upgrade pip
-          pip install -r requirements.txt
-          pip install pytest
-
-      - name: Install application
-        run: pip install -e .
-
-      - name: Run tests
-        id: test
-        run: pytest tests/ -v
 
       # Step 3: Deploy (only runs if build and test succeed)
       - name: Deploy to Cloud Run
