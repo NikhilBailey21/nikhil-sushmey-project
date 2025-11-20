@@ -100,7 +100,11 @@ class Pg8000DictCursor:
         self._columns = None
     
     def execute(self, query, params=None):
-        result = self._cursor.execute(query, params)
+        # pg8000 doesn't accept None as params - use empty tuple or no second arg
+        if params is None:
+            result = self._cursor.execute(query)
+        else:
+            result = self._cursor.execute(query, params)
         # Get column names from cursor description
         if self._cursor.description:
             self._columns = [desc[0] for desc in self._cursor.description]
@@ -136,11 +140,12 @@ def execute_query(db, query, params=None):
         # PostgreSQL - use %s placeholders and quote reserved keywords
         # Quote 'user' table name (reserved keyword in PostgreSQL)
         # Replace 'user' table name with quoted version, but only when it's a table reference
-        # Match: FROM user, INTO user, UPDATE user, REFERENCES user
+        # Match: FROM user, INTO user, UPDATE user, REFERENCES user, JOIN user
         query = re.sub(r'\bFROM\s+user\b', 'FROM "user"', query, flags=re.IGNORECASE)
         query = re.sub(r'\bINTO\s+user\b', 'INTO "user"', query, flags=re.IGNORECASE)
         query = re.sub(r'\bUPDATE\s+user\b', 'UPDATE "user"', query, flags=re.IGNORECASE)
         query = re.sub(r'\bREFERENCES\s+user\b', 'REFERENCES "user"', query, flags=re.IGNORECASE)
+        query = re.sub(r'\bJOIN\s+user\b', 'JOIN "user"', query, flags=re.IGNORECASE)
         
         if params:
             # Convert ? to %s in query
