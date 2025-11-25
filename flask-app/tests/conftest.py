@@ -1,7 +1,13 @@
 import os
-import tempfile
 
 import pytest
+
+try:
+    from dotenv import load_dotenv
+    env_path = os.path.join(os.path.dirname(__file__), "..", ".env")
+    load_dotenv(env_path)
+except ImportError as error:
+    raise RuntimeError(f"Error loading .env file: {error}")
 
 from flaskr import create_app
 from flaskr.db import get_db
@@ -15,21 +21,54 @@ with open(os.path.join(os.path.dirname(__file__), "data.sql"), "rb") as f:
 @pytest.fixture
 def app():
     """Create and configure a new app instance for each test."""
-    # create a temporary file to isolate the database for each test
-    db_fd, db_path = tempfile.mkstemp()
-    # create the app with common test config
-    app = create_app({"TESTING": True, "DATABASE": db_path})
+    # Use CloudSQL connection from .env file
+    # Check for CloudSQL connection variables
+    cloud_sql_connection_name = os.environ.get("CLOUD_SQL_CONNECTION_NAME")
+    db_user = os.environ.get("DB_USER")
+    db_pass = os.environ.get("DB_PASS")
+    db_name = os.environ.get("DB_NAME")
+    
+    if not cloud_sql_connection_name:
+        pytest.skip("CLOUD_SQL_CONNECTION_NAME must be set in .env for tests")
+    
+    if not db_user or not db_pass or not db_name:
+        pytest.skip("DB_USER, DB_PASS, and DB_NAME must be set in .env for tests")
+    
+    # Ensure we use Cloud SQL connection, not DATABASE_URL
+    # Temporarily unset DATABASE_URL if it exists to force Cloud SQL connector usage
+    original_database_url = os.environ.pop("DATABASE_URL", None)
+    
+    try:
+        app = create_app({"TESTING": True})
 
-    # create the database and load test data
-    with app.app_context():
-        init_db()
-        get_db().executescript(_data_sql)
+        # create the database and load test data
+        with app.app_context():
+            # Initialize database (creates tables if they don't exist)
+            init_db()
+            
+            db = get_db()
+            cursor = db.cursor()
+            # Execute each statement from data.sql
+            statements = [s.strip() for s in _data_sql.split(';') if s.strip() and not s.strip().startswith('--')]
+            for statement in statements:
+                if statement:
+                    cursor.execute(statement)
+            db.commit()
+            cursor.close()
 
-    yield app
+        yield app
 
-    # close and remove the temporary database
-    os.close(db_fd)
-    os.unlink(db_path)
+        # Clean up test data after tests
+        with app.app_context():
+            db = get_db()
+            cursor = db.cursor()
+            cursor.execute('DELETE FROM "user"')
+            db.commit()
+            cursor.close()
+    finally:
+        # Restore DATABASE_URL if it was set
+        if original_database_url:
+            os.environ["DATABASE_URL"] = original_database_url
 
 
 @pytest.fixture

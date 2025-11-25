@@ -12,3 +12,5 @@ build/
 .idea/
 *.swp
 *~
+.env
+.env.local

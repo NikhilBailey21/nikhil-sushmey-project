@@ -103,7 +103,7 @@ jobs:
             --min-instances 0 \
             --max-instances 10 \
             --add-cloudsql-instances ${{ secrets.CLOUD_SQL_CONNECTION_NAME }} \
-            --set-env-vars "CLOUD_SQL_CONNECTION_NAME=${{ secrets.CLOUD_SQL_CONNECTION_NAME }},DB_USER=${{ secrets.DB_USER }},DB_PASS=${{ secrets.DB_PASS }},DB_NAME=${{ secrets.DB_NAME }},GOOGLE_CLIENT_ID=${{ secrets.GOOGLE_CLIENT_ID }}"
+            --set-env-vars "CLOUD_SQL_CONNECTION_NAME=${{ secrets.CLOUD_SQL_CONNECTION_NAME }},DB_USER=${{ secrets.DB_USER }},DB_PASS=${{ secrets.DB_PASS }},DB_NAME=${{ secrets.DB_NAME }},GOOGLE_CLIENT_ID=${{ secrets.GOOGLE_CLIENT_ID }},SECRET_KEY=${{ secrets.SECRET_KEY }}"
 
       - name: Show service URL
         run: |-

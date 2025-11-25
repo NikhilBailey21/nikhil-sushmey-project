@@ -1,5 +1,3 @@
-import sqlite3
-
 import pytest
 
 from flaskr.db import get_db
@@ -10,10 +8,15 @@ def test_get_close_db(app):
         db = get_db()
         assert db is get_db()
 
-    with pytest.raises(sqlite3.ProgrammingError) as e:
-        db.execute("SELECT 1")
+    # After context, connection should be closed
+    # PostgreSQL connections raise different errors when closed
+    with pytest.raises(Exception) as e:
+        cursor = db.cursor()
+        cursor.execute("SELECT 1")
+        cursor.close()
 
-    assert "closed" in str(e.value)
+    # Check that it's a connection-related error
+    assert "closed" in str(e.value).lower() or "connection" in str(e.value).lower()
 
 
 def test_init_db_command(runner, monkeypatch):

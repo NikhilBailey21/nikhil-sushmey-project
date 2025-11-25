@@ -1,11 +1,9 @@
 #!/bin/bash
 set -e
 
-# Initialize database if it doesn't exist
-if [ ! -f instance/flaskr.sqlite ]; then
-    echo "Initializing database..."
-    flask init-db
-fi
+# Initialize database
+echo "Initializing database..."
+flask init-db
 
 # Run the Flask application
 # Use PORT environment variable if set, otherwise default to 8080 (Cloud Run default)

@@ -16,6 +16,9 @@ from google.oauth2 import id_token
 
 from flaskr.db import get_db
 
+# User table column indices for tuple access:
+# 0: id, 1: username, 2: email, 3: google_id, 4: name, 5: picture, 6: created
+
 bp = Blueprint("auth", __name__, url_prefix="/auth")
 
 
@@ -35,18 +38,36 @@ def login_required(view):
 @bp.before_app_request
 def load_logged_in_user():
     """If a user id is stored in the session, load the user object from
-    the database into ``g.user``."""
+    the database into ``g.user``.
+    
+    Returns tuple: (id, username, email, google_id, name, picture, created)
+    For templates, converts to dict for easier access.
+    """
     user_id = session.get("user_id")
 
     if user_id is None:
         g.user = None
     else:
-        from flaskr.db import execute_query
         db = get_db()
-        cursor = execute_query(db, "SELECT * FROM user WHERE id = ?", (user_id,))
-        g.user = cursor.fetchone()
-        if hasattr(cursor, 'close'):
-            cursor.close()
+        cursor = db.cursor()
+        cursor.execute('SELECT * FROM "user" WHERE id = %s', (user_id,))
+        user_tuple = cursor.fetchone()
+        cursor.close()
+        
+        # Convert tuple to dict for template access
+        # Tuple: (id, username, email, google_id, name, picture, created)
+        if user_tuple:
+            g.user = {
+                'id': user_tuple[0],
+                'username': user_tuple[1],
+                'email': user_tuple[2],
+                'google_id': user_tuple[3],
+                'name': user_tuple[4],
+                'picture': user_tuple[5],
+                'created': user_tuple[6] if len(user_tuple) > 6 else None
+            }
+        else:
+            g.user = None
 
 
 @bp.route("/login")
@@ -89,70 +110,52 @@ def google_callback():
         if not google_id:
             return jsonify({"success": False, "error": "Invalid user information"}), 400
 
-        from flaskr.db import execute_query, is_postgres
-        
         db = get_db()
         
         # Check if user exists by google_id or email
-        cursor = execute_query(db, "SELECT * FROM user WHERE google_id = ? OR email = ?", (google_id, email))
+        cursor = db.cursor()
+        cursor.execute('SELECT * FROM "user" WHERE google_id = %s OR email = %s', (google_id, email))
         user = cursor.fetchone()
-        if hasattr(cursor, 'close'):
-            cursor.close()
+        cursor.close()
         
         if user is None:
             # Create new user with Google account
+            # User tuple: (id, username, email, google_id, name, picture, created)
             try:
                 username = email or f"user_{google_id[:8]}"
-                if is_postgres(db):
-                    cursor = db.cursor()
-                    cursor.execute(
-                        'INSERT INTO "user" (username, email, google_id, name, picture) VALUES (%s, %s, %s, %s, %s) RETURNING id',
-                        (username, email, google_id, name, picture),
-                    )
-                    result = cursor.fetchone()
-                    user_id = result["id"]
-                    db.commit()
-                    cursor.close()
-                else:
-                    cursor = execute_query(
-                        db,
-                        "INSERT INTO user (username, email, google_id, name, picture) VALUES (?, ?, ?, ?, ?)",
-                        (username, email, google_id, name, picture),
-                    )
-                    db.commit()
-                    user_id = cursor.lastrowid
+                cursor = db.cursor()
+                cursor.execute(
+                    'INSERT INTO "user" (username, email, google_id, name, picture) VALUES (%s, %s, %s, %s, %s) RETURNING id',
+                    (username, email, google_id, name, picture),
+                )
+                result = cursor.fetchone()
+                user_id = result[0]  # id is first column
+                db.commit()
+                cursor.close()
             except Exception as e:
                 # User might have been created between check and insert
-                cursor = execute_query(db, "SELECT * FROM user WHERE google_id = ? OR email = ?", (google_id, email))
+                cursor = db.cursor()
+                cursor.execute('SELECT * FROM "user" WHERE google_id = %s OR email = %s', (google_id, email))
                 user = cursor.fetchone()
-                if hasattr(cursor, 'close'):
-                    cursor.close()
+                cursor.close()
                 if user:
-                    user_id = user["id"]
+                    user_id = user[0]  # id is first column (index 0)
                 else:
                     current_app.logger.error(f"Failed to create user: {str(e)}")
                     return jsonify({"success": False, "error": "Failed to create user"}), 500
         else:
             # Update existing user with Google info if needed
-            # Check if google_id exists (works for both dict and Row objects)
-            user_google_id = user.get("google_id") if hasattr(user, 'get') else (user["google_id"] if "google_id" in user.keys() else None)
-            if not user_google_id:
-                if is_postgres(db):
-                    cursor = db.cursor()
-                    cursor.execute(
-                        'UPDATE "user" SET google_id = %s, name = %s, picture = %s WHERE id = %s',
-                        (google_id, name, picture, user["id"]),
-                    )
-                    db.commit()
-                    cursor.close()
-                else:
-                    execute_query(
-                        db,
-                        "UPDATE user SET google_id = ?, name = ?, picture = ? WHERE id = ?",
-                        (google_id, name, picture, user["id"]),
-                    )
-                    db.commit()
-            user_id = user["id"]
+            # User tuple: (id, username, email, google_id, name, picture, created)
+            # Check if google_id is None or empty (index 3)
+            if not user[3]:  # google_id is at index 3
+                cursor = db.cursor()
+                cursor.execute(
+                    'UPDATE "user" SET google_id = %s, name = %s, picture = %s WHERE id = %s',
+                    (google_id, name, picture, user[0]),  # user[0] is id
+                )
+                db.commit()
+                cursor.close()
+            user_id = user[0]  # id is first column (index 0)
 
         # Store user id in session
         session.clear()

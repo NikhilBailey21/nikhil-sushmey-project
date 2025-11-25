@@ -1,63 +1,115 @@
-Flaskr
-======
+Flask Blog Application
+======================
 
-The basic blog app built in the Flask `tutorial`_.
+A Flask web application with Google OAuth authentication and Cloud SQL (PostgreSQL) database integration.
 
-.. _tutorial: https://flask.palletsprojects.com/tutorial/
+Features
+--------
 
+- **Google OAuth Authentication**: Secure user authentication using Google Sign-In
+- **Cloud SQL Integration**: PostgreSQL database hosted on Google Cloud SQL
+- **User Management**: User profiles stored in the database with Google account information
+- **Blog Functionality**: Basic blog interface (expandable)
 
-Install
--------
+Installation
+------------
 
-**Be sure to use the same version of the code as the version of the docs
-you're reading.** You probably want the latest tagged version, but the
-default Git version is the main branch. ::
+**Prerequisites:**
 
-    # clone the repository
-    $ git clone https://github.com/pallets/flask
-    $ cd flask
-    # checkout the correct version
-    $ git tag  # shows the tagged versions
-    $ git checkout latest-tag-found-above
-    $ cd examples/tutorial
+- Python 3.8+
+- Google Cloud account with Cloud SQL instance
+- Google OAuth 2.0 Client ID
 
-Create a virtualenv and activate it::
+**Setup:**
+
+1. Clone the repository::
+
+    $ git clone <repository-url>
+    $ cd nikhil-sushmey-project
+
+2. Navigate to the Flask application::
+
+    $ cd flask-app
+
+3. Create a virtual environment::
 
     $ python3 -m venv venv
-    $ . venv/bin/activate
+    $ source venv/bin/activate  # On Windows: venv\Scripts\activate
 
-Or on Windows cmd::
+4. Install dependencies::
 
-    $ py -3 -m venv venv
-    $ venv\Scripts\activate.bat
+    $ pip install -r requirements.txt
 
-Install Flaskr::
+5. Set up environment variables::
 
-    $ pip install -e .
+    $ cp .example.env .env
+    $ # Edit .env with your actual values
 
-Or if you are using the main branch, install Flask from source before
-installing Flaskr::
+Configuration
+-------------
 
-    $ pip install -e ../..
-    $ pip install -e .
+Create a ``.env`` file in the ``flask-app`` directory with the following variables:
 
+**Flask Configuration:**
+- ``FLASK_APP=flaskr``
+- ``FLASK_ENV=development``
+- ``SECRET_KEY=<your-secret-key>`` (generate with: ``python -c "import secrets; print(secrets.token_hex(32))"``)
 
-Run
----
+**Google OAuth:**
+- ``GOOGLE_CLIENT_ID=<your-google-client-id>.apps.googleusercontent.com``
 
-::
+  To get a Google OAuth Client ID:
+  1. Go to https://console.cloud.google.com/apis/credentials
+  2. Create a new OAuth 2.0 Client ID
+  3. Set application type to "Web application"
+  4. Add authorized JavaScript origins: ``http://localhost:5000``
+  5. Add authorized redirect URIs: ``http://localhost:5000/auth/google-callback``
 
-    export FLASK_APP=flaskr && export FLASK_ENV=development && flask run --host=0.0.0.0 --port=5000
+**Database Configuration:**
+- ``CLOUD_SQL_CONNECTION_NAME=project:region:instance``
+- ``DB_USER=postgres``
+- ``DB_PASS=<your-database-password>``
+- ``DB_NAME=flaskr``
 
-Open http://127.0.0.1:5000 in a browser.
+Running Locally
+---------------
 
+**1. Authenticate with Google Cloud:**
 
-Test
-----
+The Cloud SQL Python Connector requires Google Cloud credentials. Authenticate using::
 
-::
+    $ gcloud auth application-default login
 
-    $ cd flask-app && pytest tests/ -v
+**2. Initialize the database (first time only):**
+
+    $ cd flask-app
+    $ flask init-db
+
+This creates the necessary tables in your Cloud SQL database.
+
+**3. Run the application:**
+
+    $ flask run
+
+Or using Python directly::
+
+    $ python -m flask run
+
+The application will be available at http://localhost:5000
+
+**Note:** Ensure your Google Cloud project has:
+- Cloud SQL Admin API enabled
+- Your user account has permissions to connect to the Cloud SQL instance
+
+Testing
+-------
+
+Run the test suite::
+
+    $ cd flask-app
+    $ pytest tests/ -v
+
+The tests use the same Cloud SQL database configured in your ``.env`` file.
 
 Run with coverage report::
 
@@ -65,3 +117,38 @@ Run with coverage report::
     $ coverage run -m pytest tests/
     $ coverage report
     $ coverage html  # open htmlcov/index.html in a browser
+
+Project Structure
+-----------------
+
+::
+
+    flask-app/
+    ├── flaskr/              # Application package
+    │   ├── __init__.py     # Application factory
+    │   ├── auth.py         # Authentication blueprint (Google OAuth)
+    │   ├── blog.py         # Blog blueprint
+    │   ├── db.py           # Database connection and initialization
+    │   └── templates/      # Jinja2 templates
+    ├── tests/              # Test suite
+    ├── requirements.txt    # Python dependencies
+    └── .env               # Environment variables (create from .example.env)
+
+Database Schema
+---------------
+
+The application uses a PostgreSQL database with the following table:
+
+**user** table:
+- ``id`` - Primary key (SERIAL)
+- ``username`` - Unique username
+- ``email`` - User email address (unique)
+- ``google_id`` - Google account ID (unique, required)
+- ``name`` - User's display name
+- ``picture`` - Profile picture URL
+- ``created`` - Account creation timestamp
+
+License
+-------
+
+See LICENSE.rst for details.

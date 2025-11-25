@@ -2,15 +2,21 @@ import os
 
 from flask import Flask
 
+# Load environment variables from .env file if python-dotenv is installed
+# Flask 2.0+ does this automatically, but we make it explicit
+try:
+    from dotenv import load_dotenv
+    load_dotenv()
+except ImportError:
+    pass  # python-dotenv not installed, environment variables must be set manually
+
 
 def create_app(test_config=None):
     """Create and configure an instance of the Flask application."""
     app = Flask(__name__, instance_relative_config=True)
     app.config.from_mapping(
-        # a default secret that should be overridden by instance config
-        SECRET_KEY="dev",
-        # store the database in the instance folder
-        DATABASE=os.path.join(app.instance_path, "flaskr.sqlite"),
+        # a default secret that should be overridden by instance config or .env
+        SECRET_KEY=os.environ.get("SECRET_KEY", "dev"),
         # Google OAuth Client ID (can be overridden by instance config or environment variable)
         GOOGLE_CLIENT_ID=os.environ.get("GOOGLE_CLIENT_ID", ""),
     )
