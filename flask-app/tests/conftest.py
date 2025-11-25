@@ -43,8 +43,8 @@ def app():
 
         # create the database and load test data
         with app.app_context():
-            # Initialize database (creates tables if they don't exist)
-            init_db()
+            # Initialize database (drop and recreate for clean test state)
+            init_db(drop_existing=True)
             
             db = get_db()
             cursor = db.cursor()

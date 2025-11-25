@@ -55,6 +55,21 @@ jobs:
         working-directory: ./flask-app
         run: pip install -e .
 
+      - name: Create .env file from secrets
+        working-directory: ./flask-app
+        run: |-
+          cat > .env << EOF
+          FLASK_APP=flaskr
+          FLASK_ENV=production
+          SECRET_KEY=${{ secrets.SECRET_KEY }}
+          GOOGLE_CLIENT_ID=${{ secrets.GOOGLE_CLIENT_ID }}
+          CLOUD_SQL_CONNECTION_NAME=${{ secrets.CLOUD_SQL_CONNECTION_NAME }}
+          DB_USER=${{ secrets.DB_USER }}
+          DB_PASS=${{ secrets.DB_PASS }}
+          DB_NAME=${{ secrets.DB_NAME }}
+          EOF
+          echo ".env file created (secrets redacted in logs)"
+
       - name: Run tests
         id: test
         working-directory: ./flask-app
