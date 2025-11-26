@@ -38,6 +38,38 @@ jobs:
       - name: Configure Docker for GCR
         run: gcloud auth configure-docker $GAR_LOCATION-docker.pkg.dev --quiet
 
+      - name: Verify Cloud SQL access and permissions
+        run: |-
+          CONNECTION_NAME="${{ secrets.CLOUD_SQL_CONNECTION_NAME }}"
+          if [ -z "$CONNECTION_NAME" ]; then
+            echo "ERROR: CLOUD_SQL_CONNECTION_NAME secret is not set"
+            exit 1
+          fi
+          
+          # Parse connection name (format: project:region:instance)
+          IFS=':' read -r PROJECT REGION INSTANCE <<< "$CONNECTION_NAME"
+          
+          echo "Verifying Cloud SQL access..."
+          echo "Instance: $INSTANCE"
+          echo "Project: $PROJECT"
+          echo "Service account: $(gcloud config get-value account 2>/dev/null || echo 'Not set')"
+          
+          # Try to describe the instance to verify permissions
+          if gcloud sql instances describe "$INSTANCE" --project="$PROJECT" >/dev/null 2>&1; then
+            echo "✓ Cloud SQL access verified - service account has required permissions"
+          else
+            echo "⚠ WARNING: Cannot access Cloud SQL instance"
+            echo ""
+            echo "The service account needs the 'Cloud SQL Client' role."
+            echo "To grant permissions, run:"
+            SA_EMAIL=$(gcloud config get-value account 2>/dev/null || echo "YOUR_SERVICE_ACCOUNT_EMAIL")
+            echo "  gcloud projects add-iam-policy-binding $PROJECT \\"
+            echo "    --member='serviceAccount:$SA_EMAIL' \\"
+            echo "    --role='roles/cloudsql.client'"
+            echo ""
+            echo "Tests will still run but may fail with permission errors."
+          fi
+
       # Step 1: Test
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -69,6 +101,11 @@ jobs:
           DB_NAME=${{ secrets.DB_NAME }}
           EOF
           echo ".env file created (secrets redacted in logs)"
+          
+      # Note: The service account in GCP_SA_KEY must have the following permissions:
+      # - roles/cloudsql.client (or at minimum: cloudsql.instances.get)
+      # This is required for the Cloud SQL Python Connector to query instance metadata
+      # Grant with: gcloud projects add-iam-policy-binding PROJECT_ID --member="serviceAccount:SERVICE_ACCOUNT_EMAIL" --role="roles/cloudsql.client"
 
       - name: Run tests
         id: test
