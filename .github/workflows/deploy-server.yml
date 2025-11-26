@@ -52,22 +52,24 @@ jobs:
           echo "Verifying Cloud SQL access..."
           echo "Instance: $INSTANCE"
           echo "Project: $PROJECT"
-          echo "Service account: $(gcloud config get-value account 2>/dev/null || echo 'Not set')"
+          SA_EMAIL=$(gcloud config get-value account 2>/dev/null || echo "YOUR_SERVICE_ACCOUNT_EMAIL")
+          echo "Service account: $SA_EMAIL"
           
           # Try to describe the instance to verify permissions
           if gcloud sql instances describe "$INSTANCE" --project="$PROJECT" >/dev/null 2>&1; then
             echo "✓ Cloud SQL access verified - service account has required permissions"
           else
-            echo "⚠ WARNING: Cannot access Cloud SQL instance"
+            echo "❌ ERROR: Cannot access Cloud SQL instance"
             echo ""
-            echo "The service account needs the 'Cloud SQL Client' role."
+            echo "The service account '$SA_EMAIL' needs the 'Cloud SQL Client' role."
+            echo ""
             echo "To grant permissions, run:"
-            SA_EMAIL=$(gcloud config get-value account 2>/dev/null || echo "YOUR_SERVICE_ACCOUNT_EMAIL")
             echo "  gcloud projects add-iam-policy-binding $PROJECT \\"
             echo "    --member='serviceAccount:$SA_EMAIL' \\"
             echo "    --role='roles/cloudsql.client'"
             echo ""
-            echo "Tests will still run but may fail with permission errors."
+            echo "Failing workflow to prevent tests from running with insufficient permissions."
+            exit 1
           fi
 
       # Step 1: Test
