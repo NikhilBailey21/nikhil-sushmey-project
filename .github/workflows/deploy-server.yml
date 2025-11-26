@@ -114,7 +114,16 @@ jobs:
         working-directory: ./flask-app
         run: pytest tests/ -v
 
-      # Step 2: Build
+      # Step 2: Initialize database (must succeed before deployment)
+      - name: Initialize database
+        id: init-db
+        working-directory: ./flask-app
+        run: |-
+          echo "Initializing database tables..."
+          flask init-db
+          echo "✓ Database initialized successfully"
+
+      # Step 3: Build
       - name: Build and submit container image
         id: build
         working-directory: ./flask-app
@@ -142,7 +151,7 @@ jobs:
             sleep 5
           done
 
-      # Step 3: Deploy (only runs if build and test succeed)
+      # Step 4: Deploy (only runs if build, test, and database init succeed)
       - name: Deploy to Cloud Run
         id: deploy
         run: |-
