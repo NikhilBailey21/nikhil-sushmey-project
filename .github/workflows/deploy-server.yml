@@ -118,13 +118,22 @@ jobs:
       - name: Initialize database
         id: init-db
         working-directory: ./flask-app
+        env:
+          CLOUD_SQL_CONNECTION_NAME: ${{ secrets.CLOUD_SQL_CONNECTION_NAME }}
+          DB_NAME: ${{ secrets.DB_NAME }}
+          DB_USER: ${{ secrets.DB_USER }}
         run: |-
           echo "Initializing database tables..."
           echo ""
-          echo "Database connection details (values masked for security):"
-          echo "  CLOUD_SQL_CONNECTION_NAME: ${{ secrets.CLOUD_SQL_CONNECTION_NAME }}"
-          echo "  DB_NAME: ${{ secrets.DB_NAME }}"
-          echo "  DB_USER: ${{ secrets.DB_USER }}"
+          echo "Database connection details:"
+          echo "  CLOUD_SQL_CONNECTION_NAME: ${CLOUD_SQL_CONNECTION_NAME}"
+          echo "  DB_NAME: ${DB_NAME}"
+          echo "  DB_USER: ${DB_USER}"
+          echo ""
+          echo "Base64 encoded (for verification if values are masked above):"
+          echo "  CLOUD_SQL_CONNECTION_NAME: $(echo -n '${CLOUD_SQL_CONNECTION_NAME}' | base64)"
+          echo "  DB_NAME: $(echo -n '${DB_NAME}' | base64)"
+          echo "  DB_USER: $(echo -n '${DB_USER}' | base64)"
           echo ""
           
           # Initialize database
