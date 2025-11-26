@@ -23,7 +23,7 @@ def test_init_db_command(runner, monkeypatch):
     class Recorder:
         called = False
 
-    def fake_init_db():
+    def fake_init_db(drop_existing=False):
         Recorder.called = True
 
     monkeypatch.setattr("flaskr.db.init_db", fake_init_db)
