@@ -120,18 +120,22 @@ jobs:
         working-directory: ./flask-app
         run: |-
           echo "Initializing database tables..."
-          echo "Database connection details:"
+          echo ""
+          echo "Database connection details (values masked for security):"
           echo "  CLOUD_SQL_CONNECTION_NAME: ${{ secrets.CLOUD_SQL_CONNECTION_NAME }}"
           echo "  DB_NAME: ${{ secrets.DB_NAME }}"
           echo "  DB_USER: ${{ secrets.DB_USER }}"
+          echo ""
           
           # Initialize database
           flask init-db
           
           # Verify tables were created by querying the database
+          echo ""
           echo "Verifying tables were created..."
           python3 verify_db.py
           
+          echo ""
           echo "✓ Database initialization completed"
 
       # Step 3: Build
