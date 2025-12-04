@@ -80,12 +80,11 @@ The Cloud SQL Python Connector requires Google Cloud credentials. Authenticate u
 
     $ gcloud auth application-default login
 
-**2. Initialize the database (first time only):**
+**2. Ensure database is set up:**
 
-    $ cd flask-app
-    $ flask init-db
+The database and tables must be manually created in Cloud SQL with proper access permissions. The application expects the following table structure:
 
-This creates the necessary tables in your Cloud SQL database.
+- ``user`` table with columns: id, username, email, google_id, name, picture, created
 
 **3. Run the application:**
 
