@@ -1,5 +1,5 @@
-Flask Blog Application
-======================
+Flask Transaction Analyzer Application
+======================================
 
 A Flask web application with Google OAuth authentication and Cloud SQL (PostgreSQL) database integration.
 
@@ -9,7 +9,7 @@ Features
 - **Google OAuth Authentication**: Secure user authentication using Google Sign-In
 - **Cloud SQL Integration**: PostgreSQL database hosted on Google Cloud SQL
 - **User Management**: User profiles stored in the database with Google account information
-- **Blog Functionality**: Basic blog interface (expandable)
+- **Transaction Analyzer Functionality**: CSV upload and transaction analysis interface
 
 Installation
 ------------
@@ -126,7 +126,7 @@ Project Structure
     ├── flaskr/              # Application package
     │   ├── __init__.py     # Application factory
     │   ├── auth.py         # Authentication blueprint (Google OAuth)
-    │   ├── blog.py         # Blog blueprint
+    │   ├── transactionAnalyzer.py         # Transaction Analyzer blueprint
     │   ├── db.py           # Database connection and initialization
     │   └── templates/      # Jinja2 templates
     ├── tests/              # Test suite

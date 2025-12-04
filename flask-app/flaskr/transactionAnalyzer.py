@@ -17,7 +17,7 @@ from werkzeug.utils import secure_filename
 from google.cloud.sql.connector import Connector
 
 
-bp = Blueprint("blog", __name__)
+bp = Blueprint("transactionAnalyzer", __name__)
 
 # Set up logging
 logging.basicConfig(level=logging.INFO)
@@ -26,7 +26,7 @@ logger = logging.getLogger(__name__)
 @bp.route("/")
 def index():
     """Hello World page."""
-    return render_template("blog/index.html")
+    return render_template("transactionAnalyzer/index.html")
 
 
 @bp.route("/upload", methods=["POST"])
