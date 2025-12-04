@@ -63,9 +63,22 @@ def upload_csv():
         if len(rows) == 0:
             logger.error("Empty CSV file.")
             return jsonify({"error": "CSV file is empty"}), 400
-        row_id = insert_csv(filename=filename, csv_content=rows)
-        logger.info(f"CSV uploaded and stored with primary key:{row_id}")
-        return jsonify({"success": True, "id": row_id, "rows": len(rows)}), 200
+        try:
+            row_id = insert_csv(filename=filename, csv_content=rows)
+
+            if not row_id or row_id == -1:
+                raise ValueError("Error uploading the CSV")
+
+        except Exception as e:
+            logger.error(f"CSV upload failed: {e}")
+            return jsonify({"error": "Failed to upload CSV"}), 500
+
+        logger.info(f"CSV uploaded and stored with primary key: {row_id}")
+        return jsonify({
+            "success": True,
+            "id": row_id,
+            "rows": len(rows)
+        }), 200
 
     except Exception as e:
         logger.error(f"Error processing CSV: {str(e)}")
