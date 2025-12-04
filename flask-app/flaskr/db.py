@@ -34,9 +34,23 @@ def get_db():
         connector = g.connector
         
         # Build connection parameters from environment variables
-        db_user = os.environ.get("DB_USER", "postgres")
+        db_user = os.environ.get("DB_USER")
         db_pass = os.environ.get("DB_PASS")
-        db_name = os.environ.get("DB_NAME", "flaskr")
+        db_name = os.environ.get("DB_NAME")
+        
+        # Validate all required database configuration variables are set
+        missing_vars = []
+        if not db_user:
+            missing_vars.append("DB_USER")
+        if not db_pass:
+            missing_vars.append("DB_PASS")
+        if not db_name:
+            missing_vars.append("DB_NAME")
+        
+        if missing_vars:
+            raise RuntimeError(
+                f"Database not fully configured. Missing required environment variables: {', '.join(missing_vars)}"
+            )
         
         def getconn():
             conn = connector.connect(
