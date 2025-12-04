@@ -19,4 +19,4 @@ def test_analyzer_requires_login(client):
     """Test that analyzer page requires authentication."""
     response = client.get("/analyzer/")
     assert response.status_code == 302  # Redirect to login
-    assert b"login" in response.url.lower() or response.location.endswith("/auth/login")
+    assert response.location.endswith("/auth/login")

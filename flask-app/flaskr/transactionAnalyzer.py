@@ -31,6 +31,13 @@ def index():
     return render_template("transactionAnalyzer/index.html")
 
 
+@bp.route("/reports")
+@login_required
+def reports():
+    """Reports page - requires login."""
+    return render_template("transactionAnalyzer/reports.html")
+
+
 @bp.route("/upload", methods=["POST"])
 @login_required
 def upload_csv():
