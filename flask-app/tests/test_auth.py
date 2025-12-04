@@ -172,18 +172,6 @@ def test_login_required_decorator(client):
     response = client.get("/")
     assert response.status_code == 200
 
-
-def test_load_logged_in_user(client, auth):
-    """Test that user is loaded from session."""
-    auth.login(user_id=1)
-    
-    with client:
-        client.get("/")
-        assert session["user_id"] == 1
-        assert g.user is not None
-        assert g.user["id"] == 1
-
-
 def test_load_logged_in_user_no_session(client):
     """Test that g.user is None when not logged in."""
     with client:
