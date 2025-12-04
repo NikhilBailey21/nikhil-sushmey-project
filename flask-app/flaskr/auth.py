@@ -50,7 +50,7 @@ def load_logged_in_user():
     else:
         db = get_db()
         cursor = db.cursor()
-        cursor.execute('SELECT * FROM "user" WHERE id = %s', (user_id,))
+        cursor.execute('SELECT * FROM "users" WHERE id = %s', (user_id,))
         user_tuple = cursor.fetchone()
         cursor.close()
         
@@ -114,7 +114,7 @@ def google_callback():
         
         # Check if user exists by google_id or email
         cursor = db.cursor()
-        cursor.execute('SELECT * FROM "user" WHERE google_id = %s OR email = %s', (google_id, email))
+        cursor.execute('SELECT * FROM "users" WHERE google_id = %s OR email = %s', (google_id, email))
         user = cursor.fetchone()
         cursor.close()
         
@@ -126,7 +126,7 @@ def google_callback():
             try:
                 cursor = db.cursor()
                 cursor.execute(
-                    'INSERT INTO "user" (username, email, google_id, name, picture) VALUES (%s, %s, %s, %s, %s) RETURNING id',
+                    'INSERT INTO "users" (username, email, google_id, name, picture) VALUES (%s, %s, %s, %s, %s) RETURNING id',
                     (username, email, google_id, name, picture),
                 )
                 result = cursor.fetchone()
@@ -149,7 +149,7 @@ def google_callback():
             if not user[3]:  # google_id is at index 3
                 cursor = db.cursor()
                 cursor.execute(
-                    'UPDATE "user" SET google_id = %s, name = %s, picture = %s WHERE id = %s',
+                    'UPDATE "users" SET google_id = %s, name = %s, picture = %s WHERE id = %s',
                     (google_id, name, picture, user[0]),  # user[0] is id
                 )
                 db.commit()

@@ -73,7 +73,7 @@ def test_google_callback_new_user(mock_verify, client, app):
     with app.app_context():
         db = get_db()
         cursor = db.cursor()
-        cursor.execute('SELECT * FROM "user" WHERE google_id = %s', ("google_user_123",))
+        cursor.execute('SELECT * FROM "users" WHERE google_id = %s', ("google_user_123",))
         user = cursor.fetchone()
         cursor.close()
         assert user is not None

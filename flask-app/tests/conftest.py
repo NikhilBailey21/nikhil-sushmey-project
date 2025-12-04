@@ -53,7 +53,7 @@ def app():
     with app.app_context():
         db = get_db()
         cursor = db.cursor()
-        cursor.execute('DELETE FROM "user"')
+        cursor.execute('DELETE FROM "users"')
         db.commit()
         cursor.close()
 
