@@ -1,9 +1,6 @@
 import os
 
-import click
-from flask import current_app
 from flask import g
-from flask.cli import with_appcontext
 
 
 def get_db():
@@ -82,66 +79,8 @@ def close_db(e=None):
         connector.close()
 
 
-def init_db(drop_existing=False):
-    """Create new tables. If drop_existing is True, drop existing tables first.
-    
-    Args:
-        drop_existing: If True, drop existing tables before creating. 
-                      Default False for production safety.
-    """
-    db = get_db()
-    cursor = db.cursor()
-    
-    if drop_existing:
-        try:
-            cursor.execute('DROP TABLE IF EXISTS "user" CASCADE')
-            print("Dropped existing 'user' table (if it existed)")
-        except Exception as error:
-            print(f"Error dropping table: {error}")
-            print(f"Full error details: {repr(error)}")
-            raise
-    
-    try:
-        cursor.execute('''
-            CREATE TABLE IF NOT EXISTS "user" (
-                id SERIAL PRIMARY KEY,
-                username VARCHAR(255) UNIQUE NOT NULL,
-                email VARCHAR(255) UNIQUE,
-                google_id VARCHAR(255) UNIQUE NOT NULL,
-                name VARCHAR(255),
-                picture TEXT,
-                created TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
-            )
-        ''')
-        print("Created 'user' table (if it didn't exist)")
-    except Exception as error:
-        print(f"Error creating table: {error}")
-        print(f"Full error details: {repr(error)}")
-        raise
-    
-    db.commit()
-    cursor.close()
-
-
-@click.command("init-db")
-@click.option("--drop-existing", is_flag=True, default=False,
-              help="Drop existing tables before creating new ones (use with caution!)")
-@with_appcontext
-def init_db_command(drop_existing):
-    """Create database tables. Safe for production - only creates if they don't exist.
-    
-    Use --drop-existing flag to drop tables first (development/testing only).
-    """
-    init_db(drop_existing=drop_existing)
-    if drop_existing:
-        click.echo("Dropped and recreated database tables.")
-    else:
-        click.echo("Initialized the database (tables created if they didn't exist).")
-
-
 def init_app(app):
     """Register database functions with the Flask app. This is called by
     the application factory.
     """
     app.teardown_appcontext(close_db)
-    app.cli.add_command(init_db_command)

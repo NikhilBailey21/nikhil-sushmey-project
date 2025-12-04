@@ -11,7 +11,6 @@ except ImportError as error:
 
 from flaskr import create_app
 from flaskr.db import get_db
-from flaskr.db import init_db
 
 # read in SQL for populating test data
 with open(os.path.join(os.path.dirname(__file__), "data.sql"), "rb") as f:
@@ -36,11 +35,8 @@ def app():
     
     app = create_app({"TESTING": True})
 
-    # create the database and load test data
+    # Load test data into existing database tables
     with app.app_context():
-        # Initialize database (drop and recreate for clean test state)
-        init_db(drop_existing=True)
-        
         db = get_db()
         cursor = db.cursor()
         # Execute each statement from data.sql
