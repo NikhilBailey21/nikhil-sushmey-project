@@ -4,6 +4,7 @@ from flask import Blueprint
 from flask import render_template, request, jsonify
 from werkzeug.utils import secure_filename
 from flaskr.db import insert_csv
+from flaskr.auth import login_required
 
 import os
 import csv
@@ -17,19 +18,21 @@ from werkzeug.utils import secure_filename
 from google.cloud.sql.connector import Connector
 
 
-bp = Blueprint("transactionAnalyzer", __name__)
+bp = Blueprint("transactionAnalyzer", __name__, url_prefix="/analyzer")
 
 # Set up logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 @bp.route("/")
+@login_required
 def index():
-    """Hello World page."""
+    """Transaction Analyzer page - requires login."""
     return render_template("transactionAnalyzer/index.html")
 
 
 @bp.route("/upload", methods=["POST"])
+@login_required
 def upload_csv():
     if "file" not in request.files:
         logger.error("No file provided.")

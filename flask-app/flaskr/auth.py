@@ -162,7 +162,7 @@ def google_callback():
 
         return jsonify({
             "success": True,
-            "redirect_url": url_for("index")
+            "redirect_url": url_for("transactionAnalyzer.index")
         })
 
     except Exception as e:

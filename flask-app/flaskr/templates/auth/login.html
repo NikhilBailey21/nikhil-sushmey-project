@@ -1,52 +1,69 @@
 {% extends 'base.html' %}
 
 {% block header %}
-  <h1>{% block title %}Sign In{% endblock %}</h1>
+  <div class="row">
+    <div class="col-md-8 col-lg-6 mx-auto">
+      <h1 class="display-5 fw-bold text-center mb-4">{% block title %}Sign In{% endblock %}</h1>
+    </div>
+  </div>
 {% endblock %}
 
 {% block content %}
-  {% if google_client_id %}
-    <p>Please sign in with your Google account to continue.</p>
-    <div id="g_id_onload"
-         data-client_id="{{ google_client_id }}"
-         data-callback="handleCredentialResponse">
-    </div>
+  <div class="row">
+    <div class="col-md-8 col-lg-6 mx-auto">
+      <div class="card shadow-sm">
+        <div class="card-body p-5">
+          {% if google_client_id %}
+            <p class="lead text-center mb-4">Please sign in with your Google account to continue.</p>
+            <div class="d-flex justify-content-center mb-4">
+              <div id="g_id_onload"
+                   data-client_id="{{ google_client_id }}"
+                   data-callback="handleCredentialResponse">
+              </div>
 
-    <div class="g_id_signin"
-         data-type="standard"
-         data-size="large"
-         data-theme="outline"
-         data-text="sign_in_with"
-         data-shape="rectangular"
-         data-logo_alignment="left">
-    </div>
+              <div class="g_id_signin"
+                   data-type="standard"
+                   data-size="large"
+                   data-theme="outline"
+                   data-text="sign_in_with"
+                   data-shape="rectangular"
+                   data-logo_alignment="left">
+              </div>
+            </div>
 
-    <script src="https://accounts.google.com/gsi/client" async defer></script>
-    <script>
-      function handleCredentialResponse(response) {
-        // Send the credential to the server
-        fetch('{{ url_for("auth.google_callback") }}', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({ credential: response.credential })
-        })
-        .then(response => response.json())
-        .then(data => {
-          if (data.success) {
-            window.location.href = data.redirect_url || '{{ url_for("index") }}';
-          } else {
-            alert('Authentication failed: ' + (data.error || 'Unknown error'));
-          }
-        })
-        .catch(error => {
-          console.error('Error:', error);
-          alert('An error occurred during authentication');
-        });
-      }
-    </script>
-  {% else %}
-    <p class="error">Google authentication is not configured. Please contact the administrator.</p>
-  {% endif %}
+            <script src="https://accounts.google.com/gsi/client" async defer></script>
+            <script>
+              function handleCredentialResponse(response) {
+                // Send the credential to the server
+                fetch('{{ url_for("auth.google_callback") }}', {
+                  method: 'POST',
+                  headers: {
+                    'Content-Type': 'application/json',
+                  },
+                  body: JSON.stringify({ credential: response.credential })
+                })
+                .then(response => response.json())
+                .then(data => {
+                  if (data.success) {
+                    window.location.href = data.redirect_url || '{{ url_for("index") }}';
+                  } else {
+                    alert('Authentication failed: ' + (data.error || 'Unknown error'));
+                  }
+                })
+                .catch(error => {
+                  console.error('Error:', error);
+                  alert('An error occurred during authentication');
+                });
+              }
+            </script>
+          {% else %}
+            <div class="alert alert-danger" role="alert">
+              <i class="bi bi-exclamation-triangle me-2"></i>
+              Google authentication is not configured. Please contact the administrator.
+            </div>
+          {% endif %}
+        </div>
+      </div>
+    </div>
+  </div>
 {% endblock %}

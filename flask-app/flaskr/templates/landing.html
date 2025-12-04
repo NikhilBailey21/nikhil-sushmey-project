@@ -1,0 +1,104 @@
+{% extends 'base.html' %}
+
+{% block header %}
+{% endblock %}
+
+{% block content %}
+<div class="landing-page">
+  <div class="row justify-content-center align-items-center min-vh-75">
+    <div class="col-lg-8 col-xl-7 text-center">
+      <div class="hero-section mb-5">
+        <i class="bi bi-credit-card-2-front display-1 text-primary mb-4"></i>
+        <h1 class="display-3 fw-bold mb-4">Transaction Analyzer</h1>
+        <p class="lead text-muted mb-5">
+          Upload and analyze your credit card transactions with ease. 
+          Get insights into your spending patterns and manage your finances better.
+        </p>
+      </div>
+
+      <div class="features-section mb-5">
+        <div class="row g-4">
+          <div class="col-md-4">
+            <div class="feature-card p-4 h-100">
+              <i class="bi bi-upload display-4 text-primary mb-3"></i>
+              <h4 class="fw-bold mb-3">Easy Upload</h4>
+              <p class="text-muted">Simply upload your CSV files with drag-and-drop support</p>
+            </div>
+          </div>
+          <div class="col-md-4">
+            <div class="feature-card p-4 h-100">
+              <i class="bi bi-shield-check display-4 text-success mb-3"></i>
+              <h4 class="fw-bold mb-3">Secure</h4>
+              <p class="text-muted">Your data is protected with Google authentication</p>
+            </div>
+          </div>
+          <div class="col-md-4">
+            <div class="feature-card p-4 h-100">
+              <i class="bi bi-graph-up display-4 text-info mb-3"></i>
+              <h4 class="fw-bold mb-3">Analyze</h4>
+              <p class="text-muted">Track and analyze your spending patterns</p>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="cta-section">
+        {% if g.user %}
+          <a href="{{ url_for('transactionAnalyzer.index') }}" class="btn btn-primary btn-lg px-5 py-3">
+            <i class="bi bi-arrow-right-circle me-2"></i>Go to Transaction Analyzer
+          </a>
+        {% else %}
+          <a href="{{ url_for('auth.login') }}" class="btn btn-primary btn-lg px-5 py-3">
+            <i class="bi bi-box-arrow-in-right me-2"></i>Sign In to Get Started
+          </a>
+          <p class="text-muted mt-3 small">
+            <i class="bi bi-info-circle me-1"></i>
+            Sign in with your Google account to access the transaction analyzer
+          </p>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+</div>
+
+<style>
+.landing-page {
+  padding: 3rem 0;
+}
+
+.min-vh-75 {
+  min-height: 75vh;
+}
+
+.hero-section {
+  padding: 2rem 0;
+}
+
+.feature-card {
+  background: white;
+  border-radius: 12px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+  transition: transform 0.3s ease, box-shadow 0.3s ease;
+}
+
+.feature-card:hover {
+  transform: translateY(-5px);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.12);
+}
+
+.cta-section {
+  margin-top: 3rem;
+}
+
+@media (max-width: 768px) {
+  .hero-section h1 {
+    font-size: 2.5rem;
+  }
+  
+  .display-1 {
+    font-size: 4rem;
+  }
+}
+</style>
+{% endblock %}
+

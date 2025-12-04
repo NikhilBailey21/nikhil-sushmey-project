@@ -1,14 +1,573 @@
 {% extends 'base.html' %}
 
 {% block header %}
-  <h1>{% block title %}Hello World{% endblock %}</h1>
+  <div class="row">
+    <div class="col-12">
+      <h1 class="display-5 fw-bold text-center mb-4">{% block title %}Transaction Analyzer{% endblock %}</h1>
+    </div>
+  </div>
 {% endblock %}
 
 {% block content %}
-  <p>Welcome to Credit Card!</p>
-  <h2>Upload CSV</h2>
-    <form method="POST" action="/upload" enctype="multipart/form-data">
-        <input type="file" name="file" accept=".csv">
-        <button type="submit">Upload</button>
-    </form>
+<div class="transaction-analyzer">
+  <div class="welcome-section text-center mb-5">
+    <h2 class="fw-bold mb-3">Welcome to Transaction Analyzer</h2>
+    <p class="lead text-muted">Upload your credit card transaction CSV files to analyze and track your spending patterns.</p>
+  </div>
+
+  <div class="upload-section">
+    <div class="upload-card" id="uploadCard">
+      <div class="upload-area" id="uploadArea">
+        <div class="upload-icon">
+          <svg width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+            <polyline points="17 8 12 3 7 8"></polyline>
+            <line x1="12" y1="3" x2="12" y2="15"></line>
+          </svg>
+        </div>
+        <h3>Drop your CSV file here</h3>
+        <p>or click to browse</p>
+        <input type="file" id="fileInput" name="file" accept=".csv" hidden>
+        <button type="button" class="browse-btn" id="browseBtn">Choose File</button>
+        <p class="file-hint">Only CSV files are supported</p>
+      </div>
+      
+      <div class="file-info" id="fileInfo" style="display: none;">
+        <div class="file-details">
+          <span class="file-icon">📄</span>
+          <div class="file-text">
+            <span class="file-name" id="fileName"></span>
+            <span class="file-size" id="fileSize"></span>
+          </div>
+          <button type="button" class="remove-btn" id="removeBtn">✕</button>
+        </div>
+        <form id="uploadForm" method="POST" action="{{ url_for('transactionAnalyzer.upload_csv') }}" enctype="multipart/form-data">
+          <input type="file" name="file" accept=".csv" id="formFileInput" hidden>
+          <button type="submit" class="upload-btn" id="uploadBtn">
+            <span class="btn-text">Upload CSV</span>
+            <span class="btn-loader" style="display: none;">
+              <span class="spinner"></span>
+              Uploading...
+            </span>
+          </button>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <div class="message-container" id="messageContainer"></div>
+
+  <div class="upload-results" id="uploadResults" style="display: none;">
+    <div class="results-card">
+      <h3>Upload Successful!</h3>
+      <div class="results-content">
+        <div class="result-item">
+          <span class="result-label">File ID:</span>
+          <span class="result-value" id="resultId"></span>
+        </div>
+        <div class="result-item">
+          <span class="result-label">Rows Processed:</span>
+          <span class="result-value" id="resultRows"></span>
+        </div>
+        <div class="result-item">
+          <span class="result-label">File Name:</span>
+          <span class="result-value" id="resultFileName"></span>
+        </div>
+      </div>
+      <button type="button" class="upload-another-btn" id="uploadAnotherBtn">Upload Another File</button>
+    </div>
+  </div>
+</div>
+
+<style>
+.transaction-analyzer {
+  max-width: 800px;
+  margin: 0 auto;
+  padding: 2rem 1rem;
+}
+
+.welcome-section {
+  text-align: center;
+  margin-bottom: 3rem;
+}
+
+.welcome-section h2 {
+  color: #2c3e50;
+  margin-bottom: 0.5rem;
+  font-size: 2rem;
+}
+
+.subtitle {
+  color: #7f8c8d;
+  font-size: 1.1rem;
+  line-height: 1.6;
+}
+
+.upload-section {
+  margin-bottom: 2rem;
+}
+
+.upload-card {
+  background: white;
+  border-radius: 12px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+  overflow: hidden;
+  transition: box-shadow 0.3s ease;
+}
+
+.upload-card:hover {
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.15);
+}
+
+.upload-area {
+  padding: 3rem 2rem;
+  text-align: center;
+  border: 2px dashed #bdc3c7;
+  border-radius: 12px;
+  margin: 1rem;
+  background: #f8f9fa;
+  cursor: pointer;
+  transition: all 0.3s ease;
+}
+
+.upload-area:hover {
+  border-color: #3498db;
+  background: #e8f4f8;
+}
+
+.upload-area.drag-over {
+  border-color: #3498db;
+  background: #d6eaf8;
+  transform: scale(1.02);
+}
+
+.upload-icon {
+  color: #3498db;
+  margin-bottom: 1rem;
+}
+
+.upload-area h3 {
+  color: #2c3e50;
+  margin: 1rem 0 0.5rem;
+  font-size: 1.5rem;
+}
+
+.upload-area p {
+  color: #7f8c8d;
+  margin: 0.5rem 0 1.5rem;
+}
+
+.browse-btn {
+  background: #3498db;
+  color: white;
+  border: none;
+  padding: 0.75rem 2rem;
+  border-radius: 6px;
+  font-size: 1rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.3s ease;
+}
+
+.browse-btn:hover {
+  background: #2980b9;
+}
+
+.file-hint {
+  margin-top: 1rem;
+  font-size: 0.9rem;
+  color: #95a5a6;
+}
+
+.file-info {
+  padding: 1.5rem;
+}
+
+.file-details {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  padding: 1rem;
+  background: #f8f9fa;
+  border-radius: 8px;
+  margin-bottom: 1.5rem;
+}
+
+.file-icon {
+  font-size: 2rem;
+}
+
+.file-text {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.file-name {
+  font-weight: 600;
+  color: #2c3e50;
+}
+
+.file-size {
+  font-size: 0.9rem;
+  color: #7f8c8d;
+}
+
+.remove-btn {
+  background: #e74c3c;
+  color: white;
+  border: none;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  cursor: pointer;
+  font-size: 1.2rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.3s ease;
+}
+
+.remove-btn:hover {
+  background: #c0392b;
+}
+
+.upload-btn {
+  width: 100%;
+  background: #27ae60;
+  color: white;
+  border: none;
+  padding: 1rem;
+  border-radius: 8px;
+  font-size: 1.1rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.3s ease;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+}
+
+.upload-btn:hover:not(:disabled) {
+  background: #229954;
+}
+
+.upload-btn:disabled {
+  background: #95a5a6;
+  cursor: not-allowed;
+}
+
+.spinner {
+  width: 16px;
+  height: 16px;
+  border: 2px solid rgba(255, 255, 255, 0.3);
+  border-top-color: white;
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+.message-container {
+  margin-bottom: 1.5rem;
+}
+
+.message {
+  padding: 1rem 1.5rem;
+  border-radius: 8px;
+  margin-bottom: 1rem;
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  animation: slideIn 0.3s ease;
+}
+
+@keyframes slideIn {
+  from {
+    opacity: 0;
+    transform: translateY(-10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.message.success {
+  background: #d4edda;
+  color: #155724;
+  border: 1px solid #c3e6cb;
+}
+
+.message.error {
+  background: #f8d7da;
+  color: #721c24;
+  border: 1px solid #f5c6cb;
+}
+
+.message-icon {
+  font-size: 1.5rem;
+}
+
+.upload-results {
+  margin-top: 2rem;
+}
+
+.results-card {
+  background: white;
+  border-radius: 12px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+  padding: 2rem;
+  animation: slideIn 0.3s ease;
+}
+
+.results-card h3 {
+  color: #27ae60;
+  margin-bottom: 1.5rem;
+  font-size: 1.5rem;
+}
+
+.results-content {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  margin-bottom: 1.5rem;
+}
+
+.result-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0.75rem;
+  background: #f8f9fa;
+  border-radius: 6px;
+}
+
+.result-label {
+  font-weight: 600;
+  color: #2c3e50;
+}
+
+.result-value {
+  color: #3498db;
+  font-weight: 600;
+}
+
+.upload-another-btn {
+  width: 100%;
+  background: #3498db;
+  color: white;
+  border: none;
+  padding: 0.75rem;
+  border-radius: 8px;
+  font-size: 1rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.3s ease;
+}
+
+.upload-another-btn:hover {
+  background: #2980b9;
+}
+
+@media (max-width: 768px) {
+  .transaction-analyzer {
+    padding: 1rem;
+  }
+
+  .welcome-section h2 {
+    font-size: 1.5rem;
+  }
+
+  .upload-area {
+    padding: 2rem 1rem;
+  }
+
+  .file-details {
+    flex-wrap: wrap;
+  }
+}
+</style>
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+  const uploadArea = document.getElementById('uploadArea');
+  const fileInput = document.getElementById('fileInput');
+  const formFileInput = document.getElementById('formFileInput');
+  const browseBtn = document.getElementById('browseBtn');
+  const removeBtn = document.getElementById('removeBtn');
+  const uploadForm = document.getElementById('uploadForm');
+  const uploadBtn = document.getElementById('uploadBtn');
+  const fileInfo = document.getElementById('fileInfo');
+  const fileName = document.getElementById('fileName');
+  const fileSize = document.getElementById('fileSize');
+  const messageContainer = document.getElementById('messageContainer');
+  const uploadResults = document.getElementById('uploadResults');
+  const uploadAnotherBtn = document.getElementById('uploadAnotherBtn');
+
+  // Browse button click
+  browseBtn.addEventListener('click', () => fileInput.click());
+  uploadArea.addEventListener('click', () => fileInput.click());
+
+  // File input change
+  fileInput.addEventListener('change', handleFileSelect);
+  formFileInput.addEventListener('change', handleFileSelect);
+
+  // Drag and drop
+  uploadArea.addEventListener('dragover', (e) => {
+    e.preventDefault();
+    uploadArea.classList.add('drag-over');
+  });
+
+  uploadArea.addEventListener('dragleave', () => {
+    uploadArea.classList.remove('drag-over');
+  });
+
+  uploadArea.addEventListener('drop', (e) => {
+    e.preventDefault();
+    uploadArea.classList.remove('drag-over');
+    
+    const files = e.dataTransfer.files;
+    if (files.length > 0) {
+      handleFile(files[0]);
+    }
+  });
+
+  function handleFileSelect(e) {
+    const file = e.target.files[0];
+    if (file) {
+      handleFile(file);
+    }
+  }
+
+  function handleFile(file) {
+    if (!file.name.toLowerCase().endsWith('.csv')) {
+      showMessage('Please select a CSV file.', 'error');
+      return;
+    }
+
+    fileName.textContent = file.name;
+    fileSize.textContent = formatFileSize(file.size);
+    
+    // Create a new FileList-like object for the form input
+    const dataTransfer = new DataTransfer();
+    dataTransfer.items.add(file);
+    formFileInput.files = dataTransfer.files;
+    fileInput.files = dataTransfer.files;
+
+    uploadArea.style.display = 'none';
+    fileInfo.style.display = 'block';
+  }
+
+  function formatFileSize(bytes) {
+    if (bytes === 0) return '0 Bytes';
+    const k = 1024;
+    const sizes = ['Bytes', 'KB', 'MB', 'GB'];
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    return Math.round(bytes / Math.pow(k, i) * 100) / 100 + ' ' + sizes[i];
+  }
+
+  removeBtn.addEventListener('click', () => {
+    fileInput.value = '';
+    formFileInput.value = '';
+    uploadArea.style.display = 'block';
+    fileInfo.style.display = 'none';
+    hideMessage();
+    hideResults();
+  });
+
+  uploadForm.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    
+    if (!formFileInput.files[0]) {
+      showMessage('Please select a file first.', 'error');
+      return;
+    }
+
+    const formData = new FormData(uploadForm);
+    
+    // Show loading state
+    uploadBtn.disabled = true;
+    uploadBtn.querySelector('.btn-text').style.display = 'none';
+    uploadBtn.querySelector('.btn-loader').style.display = 'flex';
+    hideMessage();
+    hideResults();
+
+    try {
+      const response = await fetch('{{ url_for("transactionAnalyzer.upload_csv") }}', {
+        method: 'POST',
+        body: formData
+      });
+
+      const data = await response.json();
+
+      if (response.ok && data.success) {
+        showMessage('File uploaded successfully!', 'success');
+        showResults(data);
+        // Reset form
+        fileInput.value = '';
+        formFileInput.value = '';
+        uploadArea.style.display = 'block';
+        fileInfo.style.display = 'none';
+      } else {
+        showMessage(data.error || 'Upload failed. Please try again.', 'error');
+      }
+    } catch (error) {
+      showMessage('An error occurred while uploading. Please try again.', 'error');
+      console.error('Upload error:', error);
+    } finally {
+      // Reset button state
+      uploadBtn.disabled = false;
+      uploadBtn.querySelector('.btn-text').style.display = 'block';
+      uploadBtn.querySelector('.btn-loader').style.display = 'none';
+    }
+  });
+
+  uploadAnotherBtn.addEventListener('click', () => {
+    hideResults();
+    fileInput.value = '';
+    formFileInput.value = '';
+    uploadArea.style.display = 'block';
+    fileInfo.style.display = 'none';
+  });
+
+  function showMessage(text, type) {
+    const message = document.createElement('div');
+    message.className = `message ${type}`;
+    message.innerHTML = `
+      <span class="message-icon">${type === 'success' ? '✓' : '✕'}</span>
+      <span>${text}</span>
+    `;
+    messageContainer.innerHTML = '';
+    messageContainer.appendChild(message);
+    
+    // Auto-hide after 5 seconds
+    setTimeout(() => {
+      if (message.parentNode) {
+        message.style.opacity = '0';
+        setTimeout(() => message.remove(), 300);
+      }
+    }, 5000);
+  }
+
+  function hideMessage() {
+    messageContainer.innerHTML = '';
+  }
+
+  function showResults(data) {
+    document.getElementById('resultId').textContent = data.id;
+    document.getElementById('resultRows').textContent = data.rows;
+    document.getElementById('resultFileName').textContent = fileName.textContent;
+    uploadResults.style.display = 'block';
+  }
+
+  function hideResults() {
+    uploadResults.style.display = 'none';
+  }
+});
+</script>
 {% endblock %}
