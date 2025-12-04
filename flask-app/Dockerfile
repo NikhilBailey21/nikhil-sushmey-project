@@ -25,9 +25,6 @@ RUN pip install -e .
 COPY docker-entrypoint.sh /usr/local/bin/
 RUN chmod +x /usr/local/bin/docker-entrypoint.sh
 
-# Create instance directory for database
-RUN mkdir -p instance
-
 # Expose port 8080 (Cloud Run default, configurable via PORT env var)
 EXPOSE 8080
 

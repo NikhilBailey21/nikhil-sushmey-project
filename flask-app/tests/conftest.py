@@ -34,41 +34,32 @@ def app():
     if not db_user or not db_pass or not db_name:
         pytest.skip("DB_USER, DB_PASS, and DB_NAME must be set in .env for tests")
     
-    # Ensure we use Cloud SQL connection, not DATABASE_URL
-    # Temporarily unset DATABASE_URL if it exists to force Cloud SQL connector usage
-    original_database_url = os.environ.pop("DATABASE_URL", None)
-    
-    try:
-        app = create_app({"TESTING": True})
+    app = create_app({"TESTING": True})
 
-        # create the database and load test data
-        with app.app_context():
-            # Initialize database (drop and recreate for clean test state)
-            init_db(drop_existing=True)
-            
-            db = get_db()
-            cursor = db.cursor()
-            # Execute each statement from data.sql
-            statements = [s.strip() for s in _data_sql.split(';') if s.strip() and not s.strip().startswith('--')]
-            for statement in statements:
-                if statement:
-                    cursor.execute(statement)
-            db.commit()
-            cursor.close()
+    # create the database and load test data
+    with app.app_context():
+        # Initialize database (drop and recreate for clean test state)
+        init_db(drop_existing=True)
+        
+        db = get_db()
+        cursor = db.cursor()
+        # Execute each statement from data.sql
+        statements = [s.strip() for s in _data_sql.split(';') if s.strip() and not s.strip().startswith('--')]
+        for statement in statements:
+            if statement:
+                cursor.execute(statement)
+        db.commit()
+        cursor.close()
 
-        yield app
+    yield app
 
-        # Clean up test data after tests
-        with app.app_context():
-            db = get_db()
-            cursor = db.cursor()
-            cursor.execute('DELETE FROM "user"')
-            db.commit()
-            cursor.close()
-    finally:
-        # Restore DATABASE_URL if it was set
-        if original_database_url:
-            os.environ["DATABASE_URL"] = original_database_url
+    # Clean up test data after tests
+    with app.app_context():
+        db = get_db()
+        cursor = db.cursor()
+        cursor.execute('DELETE FROM "user"')
+        db.commit()
+        cursor.close()
 
 
 @pytest.fixture

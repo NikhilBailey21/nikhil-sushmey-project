@@ -13,26 +13,17 @@ except ImportError:
 
 def create_app(test_config=None):
     """Create and configure an instance of the Flask application."""
-    app = Flask(__name__, instance_relative_config=True)
+    app = Flask(__name__)
     app.config.from_mapping(
-        # a default secret that should be overridden by instance config or .env
+        # a default secret that should be overridden by .env
         SECRET_KEY=os.environ.get("SECRET_KEY", "dev"),
-        # Google OAuth Client ID (can be overridden by instance config or environment variable)
+        # Google OAuth Client ID (can be overridden by environment variable)
         GOOGLE_CLIENT_ID=os.environ.get("GOOGLE_CLIENT_ID", ""),
     )
 
-    if test_config is None:
-        # load the instance config, if it exists, when not testing
-        app.config.from_pyfile("config.py", silent=True)
-    else:
+    if test_config is not None:
         # load the test config if passed in
         app.config.update(test_config)
-
-    # ensure the instance folder exists
-    try:
-        os.makedirs(app.instance_path)
-    except OSError:
-        pass
 
     @app.route("/hello")
     def hello():

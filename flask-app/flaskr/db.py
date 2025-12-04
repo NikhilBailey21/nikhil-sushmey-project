@@ -16,53 +16,39 @@ def get_db():
     """
     if "db" not in g:
         # Check for Cloud SQL connection
-        database_url = os.environ.get("DATABASE_URL")
         cloud_sql_connection_name = os.environ.get("CLOUD_SQL_CONNECTION_NAME")
         
-        if database_url:
-            # Direct connection string using pg8000 (for local testing with Cloud SQL proxy)
-            import pg8000
-            # Parse DATABASE_URL format: postgresql://user:password@host:port/dbname
-            from urllib.parse import urlparse
-            parsed = urlparse(database_url)
-            g.db = pg8000.connect(
-                user=parsed.username or "postgres",
-                password=parsed.password or "",
-                host=parsed.hostname or "localhost",
-                port=parsed.port or 5432,
-                database=parsed.path.lstrip("/") or "flaskr"
-            )
-        elif cloud_sql_connection_name:
-            # Use Cloud SQL Python Connector with pg8000
-            from google.cloud.sql.connector import Connector
-            import pg8000
-            
-            # Initialize connector (reuse across requests for better performance)
-            if "connector" not in g:
-                g.connector = Connector()
-            
-            connector = g.connector
-            
-            # Build connection parameters from environment variables
-            db_user = os.environ.get("DB_USER", "postgres")
-            db_pass = os.environ.get("DB_PASS")
-            db_name = os.environ.get("DB_NAME", "flaskr")
-            
-            def getconn():
-                conn = connector.connect(
-                    cloud_sql_connection_name,
-                    "pg8000",
-                    user=db_user,
-                    password=db_pass,
-                    db=db_name,
-                )
-                return conn
-            
-            g.db = getconn()
-        else:
+        if not cloud_sql_connection_name:
             raise RuntimeError(
-                "Database not configured. Set either DATABASE_URL or CLOUD_SQL_CONNECTION_NAME environment variable."
+                "Database not configured. Set CLOUD_SQL_CONNECTION_NAME environment variable."
             )
+        
+        # Use Cloud SQL Python Connector with pg8000
+        from google.cloud.sql.connector import Connector
+        import pg8000
+        
+        # Initialize connector (reuse across requests for better performance)
+        if "connector" not in g:
+            g.connector = Connector()
+        
+        connector = g.connector
+        
+        # Build connection parameters from environment variables
+        db_user = os.environ.get("DB_USER", "postgres")
+        db_pass = os.environ.get("DB_PASS")
+        db_name = os.environ.get("DB_NAME", "flaskr")
+        
+        def getconn():
+            conn = connector.connect(
+                cloud_sql_connection_name,
+                "pg8000",
+                user=db_user,
+                password=db_pass,
+                db=db_name,
+            )
+            return conn
+        
+        g.db = getconn()
 
     return g.db
 
