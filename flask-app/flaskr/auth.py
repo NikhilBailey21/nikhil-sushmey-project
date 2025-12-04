@@ -121,28 +121,27 @@ def google_callback():
         if user is None:
             # Create new user with Google account
             # User tuple: (id, username, email, google_id, name, picture, created)
+            username = email or f"user_{google_id[:8]}"
+            cursor = None
             try:
-                username = email or f"user_{google_id[:8]}"
                 cursor = db.cursor()
                 cursor.execute(
                     'INSERT INTO "user" (username, email, google_id, name, picture) VALUES (%s, %s, %s, %s, %s) RETURNING id',
                     (username, email, google_id, name, picture),
                 )
                 result = cursor.fetchone()
-                user_id = result[0]  # id is first column
+                user_id = result[0]
+                if user_id is None or user_id < 0:
+                    raise Exception("Failed to create user, query returned: " + str(result))
                 db.commit()
                 cursor.close()
             except Exception as e:
-                # User might have been created between check and insert
-                cursor = db.cursor()
-                cursor.execute('SELECT * FROM "user" WHERE google_id = %s OR email = %s', (google_id, email))
-                user = cursor.fetchone()
-                cursor.close()
-                if user:
-                    user_id = user[0]  # id is first column (index 0)
-                else:
-                    current_app.logger.error(f"Failed to create user: {str(e)}")
-                    return jsonify({"success": False, "error": "Failed to create user"}), 500
+                current_app.logger.error(f"Error creating user: {str(e)}", exc_info=True)
+                
+                if cursor:
+                    cursor.close()
+                
+                return jsonify({"success": False, "error": "Failed to create user"}), 500
         else:
             # Update existing user with Google info if needed
             # User tuple: (id, username, email, google_id, name, picture, created)
