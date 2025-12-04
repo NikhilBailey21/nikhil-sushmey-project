@@ -1,7 +1,9 @@
+import logging
 import os
 
 from flask import g
 
+logger = logging.getLogger(__name__)
 
 def get_db():
     """Connect to the application's configured database. The connection
@@ -77,6 +79,35 @@ def close_db(e=None):
     connector = g.pop("connector", None)
     if connector is not None:
         connector.close()
+
+
+def insert_csv(filename: str, csv_content: str) -> int:
+    """
+    Insert CSV data into the database.
+    
+    Args:
+        filename: Name of the CSV file
+        csv_content: Raw CSV text content (as string)
+    
+    Returns:
+        Row ID if successful, -1 if failed
+    """
+    db = get_db()
+    
+    try:
+        with db.cursor() as connection:  # Ensures closing
+            connection.execute('INSERT INTO uploaded_csvs (filename, csv_content) VALUES (%s, %s) RETURNING id',
+                (filename, csv_content),
+            )
+            row_id = connection.fetchone()[0]
+            db.commit()  # commit the transaction
+            
+        logger.info(f"✓ CSV inserted with ID: {row_id}")
+        return row_id
+        
+    except Exception as e:
+        logger.error(f"✗ Error inserting CSV: {e}")
+        return -1
 
 
 def init_app(app):

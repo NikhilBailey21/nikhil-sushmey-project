@@ -3,7 +3,7 @@ import logging
 from flask import Blueprint
 from flask import render_template, request, jsonify
 from werkzeug.utils import secure_filename
-from flaskr.db_functions import insert_csv
+from flaskr.db import insert_csv
 
 import os
 import csv
