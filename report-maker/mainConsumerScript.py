@@ -29,8 +29,12 @@ def process_job(channel: pika.channel.Channel, method: pika.spec.Basic.Deliver,
     """
     # Get retry count from message headers, default to 0
     retry_count = 0
-    if properties.headers and 'x-retry-count' in properties.headers:
-        retry_count = properties.headers['x-retry-count']
+    if properties and properties.headers and 'x-retry-count' in properties.headers:
+        try:
+            retry_count = int(properties.headers['x-retry-count'])
+        except (ValueError, TypeError):
+            logger.warning(f"Invalid retry count in headers: {properties.headers.get('x-retry-count')}, defaulting to 0")
+            retry_count = 0
     
     max_retries = 3
     
@@ -122,8 +126,8 @@ def process_job(channel: pika.channel.Channel, method: pika.spec.Basic.Deliver,
                 f"Requeuing with retry count: {new_retry_count}. CSV ID: {csv_id_for_logging}"
             )
             
-            # Update message headers with new retry count
-            # Create a new properties object with updated headers
+            # Update message headers with new retry count and republish
+            # This ensures the retry count is preserved
             updated_properties = pika.BasicProperties(
                 delivery_mode=properties.delivery_mode if properties else 2,
                 priority=properties.priority if properties else 0,
@@ -131,7 +135,8 @@ def process_job(channel: pika.channel.Channel, method: pika.spec.Basic.Deliver,
             )
             updated_properties.headers['x-retry-count'] = new_retry_count
             
-            # Republish with updated retry count
+            # Republish with updated retry count, then acknowledge original
+            # This is atomic: if republish fails, we don't ack, so message stays in queue
             try:
                 channel.basic_publish(
                     exchange='',
@@ -139,15 +144,23 @@ def process_job(channel: pika.channel.Channel, method: pika.spec.Basic.Deliver,
                     body=body,
                     properties=updated_properties
                 )
-                # Acknowledge the original message (since we republished it)
+                # Only acknowledge after successful republish
                 acknowledge_message(channel, method)
                 logger.info(f"Job republished with retry count {new_retry_count}")
             except Exception as republish_error:
-                logger.error(f"Failed to republish message with retry count: {str(republish_error)}", exc_info=True)
-                # Fall back to simple reject with requeue
+                logger.error(
+                    f"Failed to republish message with retry count: {str(republish_error)}. "
+                    f"Message will be requeued by RabbitMQ with original retry count.",
+                    exc_info=True
+                )
+                # Reject with requeue - message will come back with original retry count
+                # This means the retry count won't increment, but at least the message won't be lost
                 try:
                     reject_message(channel, method, requeue=True)
-                    logger.info("Job rejected and requeued for retry (fallback method)")
+                    logger.warning(
+                        "Job rejected and requeued (retry count not incremented due to republish failure). "
+                        "This may cause the job to retry more than intended."
+                    )
                 except Exception as reject_error:
                     logger.error(f"Failed to reject/requeue message: {str(reject_error)}", exc_info=True)
 
