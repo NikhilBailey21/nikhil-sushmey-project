@@ -4,6 +4,8 @@
 import json
 import logging
 import pika
+from shared.db import get_db
+from ReportMaker import ReportMaker
 from shared.rabbitmq_client import consume_jobs, acknowledge_message, reject_message, DEFAULT_QUEUE_NAME
 
 # Set up logging
@@ -37,8 +39,17 @@ def process_job(channel: pika.channel.Channel, method: pika.spec.Basic.Deliver,
         logger.info(f"Row count: {job_data.get('row_count')}")
         logger.info("=" * 60)
         
+        csv_id = job_data.get('csv_id')
         # TODO: Process the CSV here
         # For now, just log and acknowledge
+
+        # Create ReportMaker VertexAI Object
+        try:
+            rm = ReportMaker()
+            rm.make_report(csv_id=csv_id)
+        except Exception as e:
+            logger.error(f"Failed to create VertexAI object: {e}")
+            raise
         
         # Acknowledge the message to remove it from the queue
         try:
@@ -74,7 +85,7 @@ if __name__ == "__main__":
     logger.info("Waiting for jobs. Press Ctrl+C to stop.")
     
     try:
-        consume_jobs(DEFAULT_QUEUE_NAME, process_job, auto_ack=False)
+        consume_jobs(DEFAULT_QUEUE_NAME, callback=process_job, auto_ack=False)
     except KeyboardInterrupt:
         logger.info("Consumer stopped by user")
     except Exception as e:
