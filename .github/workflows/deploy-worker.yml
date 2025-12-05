@@ -93,8 +93,23 @@ jobs:
             echo "Error: All RabbitMQ secrets must be set: RABBITMQ_HOST, RABBITMQ_PORT, RABBITMQ_USER, RABBITMQ_PASS, RABBITMQ_VHOST"
             exit 1
           fi
+          
+          # Validate database secrets
+          if [ -z "${{ secrets.CLOUD_SQL_CONNECTION_NAME }}" ] || [ -z "${{ secrets.DB_USER }}" ] || [ -z "${{ secrets.DB_PASS }}" ] || [ -z "${{ secrets.DB_NAME }}" ]; then
+            echo "Error: All database secrets must be set: CLOUD_SQL_CONNECTION_NAME, DB_USER, DB_PASS, DB_NAME"
+            exit 1
+          fi
+          
+          # Validate PROJECT_ID
+          if [ -z "${{ secrets.GCP_PROJECT_ID }}" ]; then
+            echo "Error: GCP_PROJECT_ID secret must be set"
+            exit 1
+          fi
+          
           # Build environment variables as comma-separated KEY=VALUE pairs for metadata
           ENV_VARS="RABBITMQ_HOST=${{ secrets.RABBITMQ_HOST }},RABBITMQ_PORT=${{ secrets.RABBITMQ_PORT }},RABBITMQ_USER=${{ secrets.RABBITMQ_USER }},RABBITMQ_PASS=${{ secrets.RABBITMQ_PASS }},RABBITMQ_VHOST=${{ secrets.RABBITMQ_VHOST }}"
+          ENV_VARS="$ENV_VARS,CLOUD_SQL_CONNECTION_NAME=${{ secrets.CLOUD_SQL_CONNECTION_NAME }},DB_USER=${{ secrets.DB_USER }},DB_PASS=${{ secrets.DB_PASS }},DB_NAME=${{ secrets.DB_NAME }}"
+          ENV_VARS="$ENV_VARS,PROJECT_ID=${{ secrets.GCP_PROJECT_ID }}"
           
           # Also build ENV_ARGS in -e format for docker run command (used in startup script)
           ENV_ARGS="-e RABBITMQ_HOST=${{ secrets.RABBITMQ_HOST }}"
@@ -102,6 +117,11 @@ jobs:
           ENV_ARGS="$ENV_ARGS -e RABBITMQ_USER=${{ secrets.RABBITMQ_USER }}"
           ENV_ARGS="$ENV_ARGS -e RABBITMQ_PASS=${{ secrets.RABBITMQ_PASS }}"
           ENV_ARGS="$ENV_ARGS -e RABBITMQ_VHOST=${{ secrets.RABBITMQ_VHOST }}"
+          ENV_ARGS="$ENV_ARGS -e CLOUD_SQL_CONNECTION_NAME=${{ secrets.CLOUD_SQL_CONNECTION_NAME }}"
+          ENV_ARGS="$ENV_ARGS -e DB_USER=${{ secrets.DB_USER }}"
+          ENV_ARGS="$ENV_ARGS -e DB_PASS=${{ secrets.DB_PASS }}"
+          ENV_ARGS="$ENV_ARGS -e DB_NAME=${{ secrets.DB_NAME }}"
+          ENV_ARGS="$ENV_ARGS -e PROJECT_ID=${{ secrets.GCP_PROJECT_ID }}"
           
           # Check if VM exists
           if gcloud compute instances describe $VM_NAME --zone=$ZONE --project=$PROJECT_ID 2>/dev/null; then
@@ -182,8 +202,22 @@ jobs:
             exit 1
           fi
           
+          # Validate database secrets
+          if [ -z "${{ secrets.CLOUD_SQL_CONNECTION_NAME }}" ] || [ -z "${{ secrets.DB_USER }}" ] || [ -z "${{ secrets.DB_PASS }}" ] || [ -z "${{ secrets.DB_NAME }}" ]; then
+            echo "Error: All database secrets must be set: CLOUD_SQL_CONNECTION_NAME, DB_USER, DB_PASS, DB_NAME"
+            exit 1
+          fi
+          
+          # Validate PROJECT_ID
+          if [ -z "${{ secrets.GCP_PROJECT_ID }}" ]; then
+            echo "Error: GCP_PROJECT_ID secret must be set"
+            exit 1
+          fi
+          
           # Build environment variables as a single string for metadata
           ENV_VARS="RABBITMQ_HOST=${{ secrets.RABBITMQ_HOST }},RABBITMQ_PORT=${{ secrets.RABBITMQ_PORT }},RABBITMQ_USER=${{ secrets.RABBITMQ_USER }},RABBITMQ_PASS=${{ secrets.RABBITMQ_PASS }},RABBITMQ_VHOST=${{ secrets.RABBITMQ_VHOST }}"
+          ENV_VARS="$ENV_VARS,CLOUD_SQL_CONNECTION_NAME=${{ secrets.CLOUD_SQL_CONNECTION_NAME }},DB_USER=${{ secrets.DB_USER }},DB_PASS=${{ secrets.DB_PASS }},DB_NAME=${{ secrets.DB_NAME }}"
+          ENV_VARS="$ENV_VARS,PROJECT_ID=${{ secrets.GCP_PROJECT_ID }}"
           
           echo "Deploying worker container to VM via metadata update..."
           
