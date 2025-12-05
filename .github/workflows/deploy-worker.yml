@@ -92,6 +92,10 @@ jobs:
             echo "Error: All RabbitMQ secrets must be set: RABBITMQ_HOST, RABBITMQ_PORT, RABBITMQ_USER, RABBITMQ_PASS, RABBITMQ_VHOST"
             exit 1
           fi
+          # Build environment variables as comma-separated KEY=VALUE pairs for metadata
+          ENV_VARS="RABBITMQ_HOST=${{ secrets.RABBITMQ_HOST }},RABBITMQ_PORT=${{ secrets.RABBITMQ_PORT }},RABBITMQ_USER=${{ secrets.RABBITMQ_USER }},RABBITMQ_PASS=${{ secrets.RABBITMQ_PASS }},RABBITMQ_VHOST=${{ secrets.RABBITMQ_VHOST }}"
+          
+          # Also build ENV_ARGS in -e format for docker run command (used in startup script)
           ENV_ARGS="-e RABBITMQ_HOST=${{ secrets.RABBITMQ_HOST }}"
           ENV_ARGS="$ENV_ARGS -e RABBITMQ_PORT=${{ secrets.RABBITMQ_PORT }}"
           ENV_ARGS="$ENV_ARGS -e RABBITMQ_USER=${{ secrets.RABBITMQ_USER }}"
@@ -105,24 +109,36 @@ jobs:
           else
             echo "Creating VM instance '$VM_NAME'..."
             
-            # Create startup script to install Docker and run worker container
+            # Create startup script to authenticate Docker and run worker container
+            # Note: COS already has Docker installed, so we just need to authenticate
             {
               echo '#!/bin/bash'
-              echo '# Install Docker'
-              echo 'apt-get update'
-              echo 'apt-get install -y docker.io'
-              echo 'systemctl start docker'
-              echo 'systemctl enable docker'
-              echo 'usermod -aG docker $USER'
+              echo '# Get image URI and env vars from metadata'
+              echo 'IMAGE_URI=$(curl -s -H "Metadata-Flavor: Google" http://metadata.google.internal/computeMetadata/v1/instance/attributes/IMAGE_URI)'
+              echo 'ENV_VARS=$(curl -s -H "Metadata-Flavor: Google" http://metadata.google.internal/computeMetadata/v1/instance/attributes/ENV_VARS)'
+              echo 'GAR_LOC=$(echo $IMAGE_URI | cut -d/ -f1)'
+              echo ''
+              echo '# Authenticate Docker using service account token from metadata service'
+              echo 'TOKEN_RESPONSE=$(curl -s -H "Metadata-Flavor: Google" "http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/token?scopes=https://www.googleapis.com/auth/cloud-platform")'
+              echo 'ACCESS_TOKEN=$(echo "$TOKEN_RESPONSE" | grep -o "\"access_token\":\"[^\"]*\"" | cut -d"\"" -f4)'
+              echo ''
+              echo 'if [ -n "$ACCESS_TOKEN" ]; then'
+              echo '  echo "$ACCESS_TOKEN" | docker login -u oauth2accesstoken --password-stdin $GAR_LOC || true'
+              echo 'fi'
               echo ''
               echo '# Pull and run worker container'
-              echo 'IMAGE_URI="${IMAGE_URI}"'
-              echo 'ENV_ARGS="${ENV_ARGS}"'
               echo 'docker pull $IMAGE_URI || true'
               echo ''
               echo '# Stop existing container if running'
               echo 'docker stop report-maker 2>/dev/null || true'
               echo 'docker rm report-maker 2>/dev/null || true'
+              echo ''
+              echo '# Parse environment variables and build docker run command'
+              echo 'IFS="," read -ra ENV_ARRAY <<< "$ENV_VARS"'
+              echo 'ENV_ARGS=""'
+              echo 'for env_pair in "${ENV_ARRAY[@]}"; do'
+              echo '  ENV_ARGS="$ENV_ARGS -e $env_pair"'
+              echo 'done'
               echo ''
               echo '# Run worker container'
               echo 'docker run -d \'
@@ -143,7 +159,7 @@ jobs:
               --image-family=cos-stable \
               --image-project=cos-cloud \
               --metadata-from-file startup-script=/tmp/startup-script.sh \
-              --metadata IMAGE_URI=$IMAGE_URI,ENV_ARGS="$ENV_ARGS" \
+              --metadata IMAGE_URI=$IMAGE_URI,ENV_VARS="$ENV_VARS" \
               --scopes=https://www.googleapis.com/auth/cloud-platform \
               --no-address
             
@@ -219,8 +235,19 @@ jobs:
                   ENV_VARS=\$(curl -s -H \"Metadata-Flavor: Google\" http://metadata.google.internal/computeMetadata/v1/instance/attributes/ENV_VARS)
                   GAR_LOC=\$(curl -s -H \"Metadata-Flavor: Google\" http://metadata.google.internal/computeMetadata/v1/instance/attributes/GAR_LOCATION)
                   
-                  # Configure Docker authentication
-                  gcloud auth configure-docker \$GAR_LOC-docker.pkg.dev --quiet || true
+                  # Authenticate Docker using service account token from metadata service
+                  # Get access token for Artifact Registry (parse JSON response)
+                  TOKEN_RESPONSE=\$(curl -s -H \"Metadata-Flavor: Google\" \"http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/token?scopes=https://www.googleapis.com/auth/cloud-platform\")
+                  ACCESS_TOKEN=\$(echo \"\$TOKEN_RESPONSE\" | grep -o '\"access_token\":\"[^\"]*\"' | cut -d'\"' -f4)
+                  
+                  if [ -n \"\$ACCESS_TOKEN\" ]; then
+                    # Configure Docker to use the access token
+                    echo \"\$ACCESS_TOKEN\" | docker login -u oauth2accesstoken --password-stdin \$GAR_LOC-docker.pkg.dev
+                  else
+                    echo \"Failed to get access token from metadata service\"
+                    echo \"Token response: \$TOKEN_RESPONSE\"
+                    exit 1
+                  fi
                   
                   # Pull latest image
                   docker pull \$IMAGE_URI
