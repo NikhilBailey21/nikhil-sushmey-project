@@ -5,6 +5,7 @@ Used by both server (flask-app) and worker (report-maker).
 import os
 import json
 import logging
+import signal
 import pika
 from typing import Optional, Dict, Any, Callable
 
@@ -212,6 +213,16 @@ def consume_jobs(queue_name: str, callback: Callable, auto_ack: bool = False):
         logger.error("Cannot consume jobs: RabbitMQ connection failed")
         return
     
+    channel = None
+    
+    def signal_handler(signum, frame):
+        """Handle SIGTERM by gracefully stopping the consumer."""
+        logger.info("Received termination signal, stopping consumer...")
+        if channel and not channel.is_closed:
+            channel.stop_consuming()
+    
+    signal.signal(signal.SIGTERM, signal_handler)
+    
     try:
         channel = connection.channel()
         
@@ -243,6 +254,10 @@ def consume_jobs(queue_name: str, callback: Callable, auto_ack: bool = False):
         logger.error(f"Error consuming jobs: {str(e)}")
         if connection:
             connection.close()
+    finally:
+        if connection and connection.is_open:
+            connection.close()
+            logger.info("RabbitMQ connection closed")
 
 
 def acknowledge_message(channel: pika.channel.Channel, method: pika.spec.Basic.Deliver):
