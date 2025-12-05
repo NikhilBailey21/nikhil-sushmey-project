@@ -5,6 +5,7 @@ import logging
 from datetime import datetime
 from enum import IntEnum
 import statistics
+from typing import List, Dict
 import vertexai
 from typing import List, Dict
 from shared.db import get_db
@@ -19,7 +20,7 @@ class ReportMaker:
         vertexai.init(project=project_id, location=location)
         self.model = GenerativeModel("gemini-1.5-pro")
 
-    def make_report(self, csv_id: int) -> str:
+    def make_report(self, csv_id: int, user_id: int) -> str:
         csv_string = self._get_csv_string_from_database(csv_id) # Database Call
  
         for attemptCount in range(3):
@@ -31,7 +32,7 @@ class ReportMaker:
 
                 metrics = self._calculate_metrics_from_transaction_list(transaction_list)
                 markdown_report = self._make_markdown_report_from_transaction_list(transaction_list, metrics) # VertexAI Call
-                self._upload_markdown_report_to_database(csv_id, markdown_report) # Database Call
+                self._upload_markdown_report_to_database(markdown_report, user_id) # Database Call
                 return markdown_report
 
             except Exception as error:
@@ -396,16 +397,16 @@ The amount should be the same as the transaction amount in cents (multiply by 10
 
         return json.loads(response.text)
 
-    def _upload_markdown_report_to_database(self, csv_id: int, markdown_report: str):
+    def _upload_markdown_report_to_database(self, markdown_report: str, user_id: int):
         try:
             db = get_db()
             cursor = None
             cursor = db.cursor()
             cursor.execute("""
-                INSERT INTO reports (csv_id, report_md)
+                INSERT INTO reports (report_md, userid)
                 VALUES (%s, %s)
                 RETURNING id
-            """, (csv_id, markdown_report))
+            """, (markdown_report, user_id))
             report_id = cursor.fetchone()[0]
             logger.info(f"Markdown report uploaded successfully with report id: {report_id}")
         except Exception as e:

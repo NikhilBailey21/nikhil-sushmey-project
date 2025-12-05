@@ -37,16 +37,21 @@ def process_job(channel: pika.channel.Channel, method: pika.spec.Basic.Deliver,
         logger.info(f"CSV ID: {job_data.get('csv_id')}")
         logger.info(f"Filename: {job_data.get('filename')}")
         logger.info(f"Row count: {job_data.get('row_count')}")
+        logger.info(f"User ID: {job_data.get('user_id')}")
         logger.info("=" * 60)
         
         csv_id = job_data.get('csv_id')
-        # TODO: Process the CSV here
-        # For now, just log and acknowledge
+        user_id = job_data.get('user_id')
+        
+        if not csv_id:
+            raise ValueError("Missing required field: csv_id")
+        if not user_id:
+            raise ValueError("Missing required field: user_id")
 
         # Create ReportMaker VertexAI Object
         try:
             rm = ReportMaker()
-            rm.make_report(csv_id=csv_id)
+            rm.make_report(csv_id=csv_id, user_id=user_id)
         except Exception as e:
             logger.error(f"Failed to create VertexAI object: {e}")
             raise

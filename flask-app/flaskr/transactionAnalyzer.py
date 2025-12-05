@@ -133,7 +133,8 @@ def upload_csv():
         job_data = {
             "csv_id": row_id,
             "filename": filename,
-            "row_count": len(rows)
+            "row_count": len(rows),
+            "user_id": g.user['id']
         }
         
         try:
