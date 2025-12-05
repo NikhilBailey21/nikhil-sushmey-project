@@ -45,8 +45,8 @@ class ReportMaker:
 
     def _get_csv_string_from_database(self, csv_id: int) -> str:
         try:
-            db = get_db()
             cursor = None
+            db = get_db()
             cursor = db.cursor()
             csv_string = cursor.execute(f"SELECT csv_content FROM uploaded_csvs WHERE csv_id='{csv_id}'")
             cursor.close()
@@ -399,8 +399,8 @@ The amount should be the same as the transaction amount in cents (multiply by 10
 
     def _upload_markdown_report_to_database(self, markdown_report: str, user_id: int):
         try:
-            db = get_db()
             cursor = None
+            db = get_db()
             cursor = db.cursor()
             cursor.execute("""
                 INSERT INTO reports (report_md, userid)
