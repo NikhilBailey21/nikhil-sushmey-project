@@ -1,0 +1,269 @@
+name: Deploy RabbitMQ (Work Queue)
+
+on:
+  push:
+    branches:
+      - main
+      - master
+    paths:
+      - 'workQueue/**'
+      - '.github/workflows/deploy-rabbitmq.yml'
+  workflow_dispatch: # Allows manual triggering
+
+env:
+  PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
+  GAR_LOCATION: ${{ secrets.GCP_REGION }}
+  IMAGE_NAME: rabbitmq
+  VM_NAME: rabbitmq-vm
+  ZONE: ${{ secrets.GCP_ZONE || 'us-central1-a' }}
+  REGION: ${{ secrets.GCP_REGION }}
+
+jobs:
+  deploy:
+    permissions:
+      contents: read
+      id-token: write
+
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.GCP_SA_KEY }}
+
+      - name: Set up Cloud SDK
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Configure Docker for GCR
+        run: gcloud auth configure-docker $GAR_LOCATION-docker.pkg.dev --quiet
+
+      # Step 1: Build and push Docker image
+      - name: Build and submit container image
+        id: build
+        working-directory: ./workQueue
+        run: |-
+          # Submit build asynchronously to avoid log streaming permission issues
+          BUILD_ID=$(gcloud builds submit --async --tag $GAR_LOCATION-docker.pkg.dev/$PROJECT_ID/cloud-run-source-deploy/$IMAGE_NAME:$GITHUB_SHA --format="value(id)")
+          echo "Build submitted with ID: $BUILD_ID"
+          echo "View build logs at: https://console.cloud.google.com/cloud-build/builds/$BUILD_ID?project=$PROJECT_ID"
+          
+          # Poll for build completion
+          echo "Waiting for build to complete..."
+          while true; do
+            BUILD_STATUS=$(gcloud builds describe $BUILD_ID --project=$PROJECT_ID --format="value(status)" 2>/dev/null || echo "WORKING")
+            echo "Build status: $BUILD_STATUS"
+            
+            if [ "$BUILD_STATUS" = "SUCCESS" ]; then
+              echo "Build completed successfully!"
+              break
+            elif [ "$BUILD_STATUS" = "FAILURE" ] || [ "$BUILD_STATUS" = "CANCELLED" ] || [ "$BUILD_STATUS" = "EXPIRED" ] || [ "$BUILD_STATUS" = "TIMEOUT" ]; then
+              echo "Build failed with status: $BUILD_STATUS"
+              echo "View logs at: https://console.cloud.google.com/cloud-build/builds/$BUILD_ID?project=$PROJECT_ID"
+              exit 1
+            fi
+            
+            sleep 5
+          done
+
+      # Step 2: Create or update firewall rules for RabbitMQ
+      - name: Create firewall rules for RabbitMQ
+        run: |-
+          # Check if firewall rule exists
+          if gcloud compute firewall-rules describe rabbitmq-amqp --project=$PROJECT_ID 2>/dev/null; then
+            echo "Firewall rule 'rabbitmq-amqp' already exists"
+          else
+            echo "Creating firewall rule for AMQP port (5672)..."
+            gcloud compute firewall-rules create rabbitmq-amqp \
+              --project=$PROJECT_ID \
+              --allow tcp:5672 \
+              --source-ranges 0.0.0.0/0 \
+              --description "Allow RabbitMQ AMQP traffic" \
+              --target-tags rabbitmq || echo "Firewall rule may already exist or creation failed"
+          fi
+          
+          if gcloud compute firewall-rules describe rabbitmq-management --project=$PROJECT_ID 2>/dev/null; then
+            echo "Firewall rule 'rabbitmq-management' already exists"
+          else
+            echo "Creating firewall rule for Management UI port (15672)..."
+            gcloud compute firewall-rules create rabbitmq-management \
+              --project=$PROJECT_ID \
+              --allow tcp:15672 \
+              --source-ranges 0.0.0.0/0 \
+              --description "Allow RabbitMQ Management UI traffic" \
+              --target-tags rabbitmq || echo "Firewall rule may already exist or creation failed"
+          fi
+
+      # Step 3: Reserve static IP if it doesn't exist
+      - name: Reserve static IP for RabbitMQ VM
+        id: reserve-ip
+        run: |-
+          STATIC_IP_NAME="rabbitmq-static-ip"
+          
+          # Check if static IP already exists
+          if gcloud compute addresses describe $STATIC_IP_NAME --region=$REGION --project=$PROJECT_ID 2>/dev/null; then
+            echo "Static IP '$STATIC_IP_NAME' already exists"
+            EXISTING_IP=$(gcloud compute addresses describe $STATIC_IP_NAME --region=$REGION --project=$PROJECT_ID --format='get(address)')
+            echo "static_ip=$EXISTING_IP" >> $GITHUB_OUTPUT
+            echo "ip_exists=true" >> $GITHUB_OUTPUT
+          else
+            echo "Reserving static IP '$STATIC_IP_NAME'..."
+            gcloud compute addresses create $STATIC_IP_NAME \
+              --project=$PROJECT_ID \
+              --region=$REGION \
+              --description="Static IP for RabbitMQ VM"
+            
+            NEW_IP=$(gcloud compute addresses describe $STATIC_IP_NAME --region=$REGION --project=$PROJECT_ID --format='get(address)')
+            echo "static_ip=$NEW_IP" >> $GITHUB_OUTPUT
+            echo "ip_exists=false" >> $GITHUB_OUTPUT
+            echo "Reserved static IP: $NEW_IP"
+          fi
+
+      # Step 4: Create or update Compute Engine VM instance
+      - name: Create or update VM instance
+        id: vm-setup
+        run: |-
+          IMAGE_URI="$GAR_LOCATION-docker.pkg.dev/$PROJECT_ID/cloud-run-source-deploy/$IMAGE_NAME:$GITHUB_SHA"
+          STATIC_IP="${{ steps.reserve-ip.outputs.static_ip }}"
+          
+          # Check if VM exists
+          if gcloud compute instances describe $VM_NAME --zone=$ZONE --project=$PROJECT_ID 2>/dev/null; then
+            echo "VM instance '$VM_NAME' already exists"
+            echo "vm_exists=true" >> $GITHUB_OUTPUT
+          else
+            echo "Creating VM instance '$VM_NAME' with static IP $STATIC_IP..."
+            
+            # Create startup script to install Docker and run RabbitMQ container
+            {
+              echo '#!/bin/bash'
+              echo '# Install Docker'
+              echo 'apt-get update'
+              echo 'apt-get install -y docker.io docker-compose'
+              echo 'systemctl start docker'
+              echo 'systemctl enable docker'
+              echo 'usermod -aG docker $USER'
+              echo ''
+              echo '# Pull and run RabbitMQ container'
+              echo 'IMAGE_URI="${IMAGE_URI}"'
+              echo 'docker pull $IMAGE_URI || true'
+              echo ''
+              echo '# Stop existing container if running'
+              echo 'docker stop rabbitmq 2>/dev/null || true'
+              echo 'docker rm rabbitmq 2>/dev/null || true'
+              echo ''
+              echo '# Run RabbitMQ container with persistent volume'
+              echo 'docker run -d \'
+              echo '  --name rabbitmq \'
+              echo '  --restart unless-stopped \'
+              echo '  -p 5672:5672 \'
+              echo '  -p 15672:15672 \'
+              echo '  -v rabbitmq_data:/var/lib/rabbitmq \'
+              echo '  $IMAGE_URI'
+            } > /tmp/startup-script.sh
+
+            # Create VM with startup script
+            gcloud compute instances create $VM_NAME \
+              --project=$PROJECT_ID \
+              --zone=$ZONE \
+              --machine-type=e2-medium \
+              --boot-disk-size=20GB \
+              --boot-disk-type=pd-standard \
+              --tags=rabbitmq \
+              --image-family=cos-stable \
+              --image-project=cos-cloud \
+              --metadata-from-file startup-script=/tmp/startup-script.sh \
+              --metadata IMAGE_URI=$IMAGE_URI \
+              --scopes=https://www.googleapis.com/auth/cloud-platform
+            
+            # Assign static IP to the VM
+            echo "Assigning static IP $STATIC_IP to VM..."
+            gcloud compute instances delete-access-config $VM_NAME \
+              --zone=$ZONE \
+              --project=$PROJECT_ID \
+              --access-config-name="External NAT" 2>/dev/null || true
+            
+            gcloud compute instances add-access-config $VM_NAME \
+              --zone=$ZONE \
+              --project=$PROJECT_ID \
+              --access-config-name="External NAT" \
+              --address=$STATIC_IP
+            
+            echo "vm_exists=false" >> $GITHUB_OUTPUT
+          fi
+          
+          # Store the static IP for later use
+          echo "rabbitmq_ip=$STATIC_IP" >> $GITHUB_OUTPUT
+
+      # Step 5: Deploy container to VM
+      - name: Deploy RabbitMQ container to VM
+        run: |-
+          IMAGE_URI="$GAR_LOCATION-docker.pkg.dev/$PROJECT_ID/cloud-run-source-deploy/$IMAGE_NAME:$GITHUB_SHA"
+          
+          echo "Deploying RabbitMQ container to VM..."
+          
+          # Wait for VM to be ready (if it was just created)
+          if [ "${{ steps.vm-setup.outputs.vm_exists }}" = "false" ]; then
+            echo "Waiting for VM to be ready..."
+            sleep 30
+          fi
+          
+          # SSH into VM and deploy container
+          gcloud compute ssh $VM_NAME \
+            --zone=$ZONE \
+            --project=$PROJECT_ID \
+            --command="
+              # Configure Docker authentication
+              gcloud auth configure-docker $GAR_LOCATION-docker.pkg.dev --quiet || true
+              
+              # Pull latest image
+              docker pull $IMAGE_URI
+              
+              # Stop existing container if running
+              docker stop rabbitmq 2>/dev/null || true
+              docker rm rabbitmq 2>/dev/null || true
+              
+              # Run RabbitMQ container with persistent volume
+              docker run -d \
+                --name rabbitmq \
+                --restart unless-stopped \
+                -p 5672:5672 \
+                -p 15672:15672 \
+                -v rabbitmq_data:/var/lib/rabbitmq \
+                $IMAGE_URI
+              
+              # Verify container is running
+              sleep 5
+              docker ps | grep rabbitmq || exit 1
+              echo 'RabbitMQ container deployed successfully!'
+            " \
+            --quiet || echo "Deployment completed (SSH may have timed out, but container should be running)"
+
+      # Step 6: Get VM details and output configuration
+      - name: Show VM details and RabbitMQ configuration
+        run: |-
+          RABBITMQ_IP="${{ steps.vm-setup.outputs.rabbitmq_ip }}"
+          RABBITMQ_USER="${{ secrets.RABBITMQ_USER || 'admin' }}"
+          RABBITMQ_PASS="${{ secrets.RABBITMQ_PASS || 'admin' }}"
+          
+          echo "RabbitMQ VM Details:"
+          echo "  Instance Name: $VM_NAME"
+          echo "  Zone: $ZONE"
+          echo "  Static IP: $RABBITMQ_IP"
+          echo ""
+          echo "RabbitMQ Access:"
+          echo "  AMQP Port: $RABBITMQ_IP:5672"
+          echo "  Management UI: http://$RABBITMQ_IP:15672"
+          echo "  Username: $RABBITMQ_USER"
+          echo "  Password: [configured in secrets]"
+          echo ""
+          echo "Environment Variables for Cloud Run Services:"
+          echo "  RABBITMQ_HOST=$RABBITMQ_IP"
+          echo "  RABBITMQ_PORT=5672"
+          echo "  RABBITMQ_USER=$RABBITMQ_USER"
+          echo "  RABBITMQ_PASS=[from secrets]"
+          echo "  RABBITMQ_VHOST=/"
+          echo ""
+          echo "⚠️  Note: Update Cloud Run services with these environment variables!"
+

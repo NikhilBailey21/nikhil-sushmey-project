@@ -170,6 +170,14 @@ jobs:
       - name: Deploy to Cloud Run
         id: deploy
         run: |-
+          # Build environment variables string
+          ENV_VARS="CLOUD_SQL_CONNECTION_NAME=${{ secrets.CLOUD_SQL_CONNECTION_NAME }},DB_USER=${{ secrets.DB_USER }},DB_PASS=${{ secrets.DB_PASS }},DB_NAME=${{ secrets.DB_NAME }},GOOGLE_CLIENT_ID=${{ secrets.GOOGLE_CLIENT_ID }},SECRET_KEY=${{ secrets.SECRET_KEY }}"
+          
+          # Add RabbitMQ config if secrets are set
+          if [ -n "${{ secrets.RABBITMQ_HOST }}" ]; then
+            ENV_VARS="$ENV_VARS,RABBITMQ_HOST=${{ secrets.RABBITMQ_HOST }},RABBITMQ_PORT=${{ secrets.RABBITMQ_PORT || '5672' }},RABBITMQ_USER=${{ secrets.RABBITMQ_USER || 'admin' }},RABBITMQ_PASS=${{ secrets.RABBITMQ_PASS || 'admin' }},RABBITMQ_VHOST=${{ secrets.RABBITMQ_VHOST || '/' }}"
+          fi
+          
           gcloud run deploy $SERVICE_NAME \
             --image $GAR_LOCATION-docker.pkg.dev/$PROJECT_ID/cloud-run-source-deploy/$SERVICE_NAME:$GITHUB_SHA \
             --platform managed \
@@ -181,7 +189,7 @@ jobs:
             --min-instances 0 \
             --max-instances 10 \
             --add-cloudsql-instances ${{ secrets.CLOUD_SQL_CONNECTION_NAME }} \
-            --set-env-vars "CLOUD_SQL_CONNECTION_NAME=${{ secrets.CLOUD_SQL_CONNECTION_NAME }},DB_USER=${{ secrets.DB_USER }},DB_PASS=${{ secrets.DB_PASS }},DB_NAME=${{ secrets.DB_NAME }},GOOGLE_CLIENT_ID=${{ secrets.GOOGLE_CLIENT_ID }},SECRET_KEY=${{ secrets.SECRET_KEY }}"
+            --set-env-vars "$ENV_VARS"
 
       - name: Show service URL
         run: |-

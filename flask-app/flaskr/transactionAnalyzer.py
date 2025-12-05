@@ -5,6 +5,7 @@ from flask import render_template, request, jsonify
 from werkzeug.utils import secure_filename
 from flaskr.db import insert_csv
 from flaskr.auth import login_required
+from flaskr.rabbitmq_client import get_queue_info, DEFAULT_QUEUE_NAME
 
 import os
 import csv
@@ -36,6 +37,30 @@ def index():
 def reports():
     """Reports page - requires login."""
     return render_template("transactionAnalyzer/reports.html")
+
+
+@bp.route("/queue/status")
+@login_required
+def queue_status():
+    """Get status of the report generation queue."""
+    try:
+        queue_info = get_queue_info(DEFAULT_QUEUE_NAME)
+        if queue_info:
+            return jsonify({
+                "success": True,
+                "queue": queue_info
+            }), 200
+        else:
+            return jsonify({
+                "success": False,
+                "error": "Failed to connect to RabbitMQ or queue does not exist"
+            }), 503
+    except Exception as e:
+        logger.error(f"Error getting queue status: {str(e)}")
+        return jsonify({
+            "success": False,
+            "error": str(e)
+        }), 500
 
 
 @bp.route("/upload", methods=["POST"])
