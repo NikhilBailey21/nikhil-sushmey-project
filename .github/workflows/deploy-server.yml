@@ -112,6 +112,8 @@ jobs:
       - name: Run tests
         id: test
         working-directory: ./flask-app
+        env:
+          PYTHONPATH: ${{ github.workspace }}
         run: pytest tests/ -v
 
       # Step 2: Verify database connection and tables exist
