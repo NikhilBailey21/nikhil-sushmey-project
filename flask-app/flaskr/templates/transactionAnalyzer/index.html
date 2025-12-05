@@ -410,7 +410,10 @@ document.addEventListener('DOMContentLoaded', function() {
   const uploadAnotherBtn = document.getElementById('uploadAnotherBtn');
 
   // Browse button click
-  browseBtn.addEventListener('click', () => fileInput.click());
+  browseBtn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    fileInput.click();
+  });
   uploadArea.addEventListener('click', () => fileInput.click());
 
   // File input change
