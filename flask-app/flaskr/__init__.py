@@ -30,7 +30,7 @@ def create_app(test_config=None):
         return "Hello, World!"
 
     # register the database commands
-    from flaskr import db
+    from shared import db
 
     db.init_app(app)
 

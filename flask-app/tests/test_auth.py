@@ -3,7 +3,7 @@ from unittest.mock import patch, MagicMock
 from flask import g
 from flask import session
 
-from flaskr.db import get_db
+from shared.db import get_db
 
 
 def test_login_page(client, app):

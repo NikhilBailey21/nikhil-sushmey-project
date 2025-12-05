@@ -141,10 +141,10 @@ jobs:
       # Step 3: Build
       - name: Build and submit container image
         id: build
-        working-directory: ./flask-app
         run: |-
           # Submit build asynchronously to avoid log streaming permission issues
-          BUILD_ID=$(gcloud builds submit --async --tag $GAR_LOCATION-docker.pkg.dev/$PROJECT_ID/cloud-run-source-deploy/$SERVICE_NAME:$GITHUB_SHA --format="value(id)")
+          # Build from repo root to include shared directory
+          BUILD_ID=$(gcloud builds submit --async --file=flask-app/Dockerfile --tag $GAR_LOCATION-docker.pkg.dev/$PROJECT_ID/cloud-run-source-deploy/$SERVICE_NAME:$GITHUB_SHA --format="value(id)")
           echo "Build submitted with ID: $BUILD_ID"
           echo "View build logs at: https://console.cloud.google.com/cloud-build/builds/$BUILD_ID?project=$PROJECT_ID"
           

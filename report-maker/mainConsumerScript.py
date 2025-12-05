@@ -4,7 +4,7 @@
 import json
 import logging
 import pika
-from rabbitmq_client import consume_jobs, acknowledge_message, reject_message, DEFAULT_QUEUE_NAME
+from shared.rabbitmq_client import consume_jobs, acknowledge_message, reject_message, DEFAULT_QUEUE_NAME
 
 # Set up logging
 logging.basicConfig(
@@ -41,19 +41,31 @@ def process_job(channel: pika.channel.Channel, method: pika.spec.Basic.Deliver,
         # For now, just log and acknowledge
         
         # Acknowledge the message to remove it from the queue
-        acknowledge_message(channel, method)
-        logger.info(f"Job processed and acknowledged for CSV ID: {job_data.get('csv_id')}")
+        try:
+            acknowledge_message(channel, method)
+            logger.info(f"Job processed and acknowledged for CSV ID: {job_data.get('csv_id')}")
+        except Exception as ack_error:
+            logger.error(f"Failed to acknowledge message for CSV ID {job_data.get('csv_id')}: {str(ack_error)}", exc_info=True)
+            raise  # Re-raise to trigger requeue logic
         
     except json.JSONDecodeError as e:
         logger.error(f"Failed to parse job data as JSON: {str(e)}")
         logger.error(f"Raw body: {body}")
         # Reject the message and don't requeue (malformed message)
-        reject_message(channel, method, requeue=False)
+        try:
+            reject_message(channel, method, requeue=False)
+            logger.info("Malformed message rejected and discarded")
+        except Exception as reject_error:
+            logger.error(f"Failed to reject malformed message: {str(reject_error)}", exc_info=True)
         
     except Exception as e:
         logger.error(f"Error processing job: {str(e)}", exc_info=True)
         # Reject the message and requeue it (temporary failure)
-        reject_message(channel, method, requeue=True)
+        try:
+            reject_message(channel, method, requeue=True)
+            logger.info("Job rejected and requeued for retry")
+        except Exception as reject_error:
+            logger.error(f"Failed to reject/requeue message: {str(reject_error)}", exc_info=True)
 
 
 if __name__ == "__main__":

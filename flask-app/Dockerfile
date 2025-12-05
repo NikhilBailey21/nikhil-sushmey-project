@@ -11,18 +11,21 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     FLASK_ENV=production
 
 # Copy requirements and install Python dependencies
-COPY requirements.txt .
+COPY flask-app/requirements.txt .
 RUN pip install --no-cache-dir --upgrade pip && \
     pip install --no-cache-dir -r requirements.txt
 
+# Copy shared modules
+COPY shared /app/shared
+
 # Copy application code
-COPY . .
+COPY flask-app /app
 
 # Install the application in editable mode
 RUN pip install -e .
 
 # Copy entrypoint script
-COPY docker-entrypoint.sh /usr/local/bin/
+COPY flask-app/docker-entrypoint.sh /usr/local/bin/
 RUN chmod +x /usr/local/bin/docker-entrypoint.sh
 
 # Expose port 8080 (Cloud Run default, configurable via PORT env var)

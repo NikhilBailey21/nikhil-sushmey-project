@@ -9,12 +9,14 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1
 
 # Copy requirements and install dependencies
-COPY requirements.txt .
+COPY report-maker/requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
+# Copy shared modules
+COPY shared /app/shared
+
 # Copy application code
-COPY mainConsumerScript.py .
-COPY rabbitmq_client.py .
+COPY report-maker/mainConsumerScript.py .
 
 # Make script executable
 RUN chmod +x mainConsumerScript.py

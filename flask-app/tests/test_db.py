@@ -1,6 +1,6 @@
 import pytest
 
-from flaskr.db import get_db
+from shared.db import get_db
 
 
 def test_get_close_db(app):

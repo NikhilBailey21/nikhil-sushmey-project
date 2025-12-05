@@ -14,7 +14,7 @@ from flask import url_for
 from google.auth.transport import requests
 from google.oauth2 import id_token
 
-from flaskr.db import get_db
+from shared.db import get_db
 
 # User table column indices for tuple access:
 # 0: id, 1: username, 2: email, 3: google_id, 4: name, 5: picture, 6: created

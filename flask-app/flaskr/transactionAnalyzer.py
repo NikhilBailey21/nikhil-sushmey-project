@@ -3,9 +3,9 @@ import logging
 from flask import Blueprint
 from flask import render_template, request, jsonify
 from werkzeug.utils import secure_filename
-from flaskr.db import insert_csv
+from shared.db import insert_csv
 from flaskr.auth import login_required
-from flaskr.rabbitmq_client import get_queue_info, publish_job, DEFAULT_QUEUE_NAME
+from shared.rabbitmq_client import get_queue_info, publish_job, DEFAULT_QUEUE_NAME
 
 import os
 import csv

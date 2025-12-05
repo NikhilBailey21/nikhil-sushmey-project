@@ -2,7 +2,7 @@
 """Verify database tables exist after initialization."""
 import os
 from flaskr import create_app
-from flaskr.db import get_db
+from shared.db import get_db
 
 app = create_app()
 with app.app_context():

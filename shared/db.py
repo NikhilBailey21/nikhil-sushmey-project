@@ -1,9 +1,34 @@
 import logging
 import os
 
-from flask import g
-
 logger = logging.getLogger(__name__)
+
+# Flask import - only needed when used in Flask context
+try:
+    from flask import g
+    FLASK_AVAILABLE = True
+except ImportError:
+    FLASK_AVAILABLE = False
+    # Create a mock g object for non-Flask contexts
+    class MockG:
+        def __init__(self):
+            self._data = {}
+        
+        def __contains__(self, key):
+            return key in self._data
+        
+        def __getitem__(self, key):
+            return self._data[key]
+        
+        def __setitem__(self, key, value):
+            self._data[key] = value
+        
+        def pop(self, key, default=None):
+            return self._data.pop(key, default)
+    
+    # For non-Flask contexts, use a module-level g object
+    g = MockG()
+
 
 def get_db():
     """Connect to the application's configured database. The connection
@@ -12,6 +37,9 @@ def get_db():
     
     Uses PostgreSQL via pg8000 and Cloud SQL Python Connector.
     Returns raw database connection - use tuples for row access.
+    
+    Note: In Flask context, uses Flask's g object for request-scoped storage.
+    In non-Flask context, uses module-level storage.
     """
     if "db" not in g:
         # Check for Cloud SQL connection
@@ -119,4 +147,9 @@ def init_app(app):
     """Register database functions with the Flask app. This is called by
     the application factory.
     """
+    if not FLASK_AVAILABLE:
+        logger.warning("Flask not available, init_app called but Flask features may not work")
+        return
+    
     app.teardown_appcontext(close_db)
+
