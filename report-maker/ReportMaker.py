@@ -6,6 +6,7 @@ from datetime import datetime
 from enum import IntEnum
 import statistics
 import vertexai
+from shared.db import get_db
 from vertexai.generative_models import GenerativeModel
 
 logger = logging.getLogger(__name__)
@@ -41,7 +42,16 @@ class ReportMaker:
         raise Exception("Failed to convert transaction data to structured JSON after all attempts.")
 
     def _get_csv_string_from_database(self, csv_id: int) -> str:
-        pass
+        try:
+            cursor = get_db()
+            csv_string = cursor.execute(f"SELECT csv_content FROM uploaded_csvs WHERE csv_id='{csv_id}'")
+            cursor.close()
+        except Exception as e:
+            logger.error(f"ReportMaker failed to connect to db: {e}")
+            if cursor:
+                cursor.close()
+            raise
+        return csv_string
 
     def _convert_transaction_data_to_structured_json(self, transaction_data: str):
         schema = {
