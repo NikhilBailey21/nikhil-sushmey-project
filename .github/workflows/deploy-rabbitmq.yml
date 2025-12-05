@@ -243,6 +243,52 @@ jobs:
           # Store the static IP for later use
           echo "rabbitmq_ip=$STATIC_IP" >> $GITHUB_OUTPUT
 
+      # Step 4.5: Ensure VM service account has Artifact Registry permissions
+      - name: Grant Artifact Registry permissions to VM service account
+        run: |-
+          echo "Ensuring VM service account has Artifact Registry Reader role..."
+          
+          # Get the VM's service account email
+          SERVICE_ACCOUNT=$(gcloud compute instances describe $VM_NAME \
+            --zone=$ZONE \
+            --project=$PROJECT_ID \
+            --format='get(serviceAccounts[0].email)' 2>/dev/null || echo "")
+          
+          if [ -z "$SERVICE_ACCOUNT" ]; then
+            echo "ERROR: Could not determine VM service account."
+            echo "The VM must exist and have a service account to pull images from Artifact Registry."
+            exit 1
+          fi
+          
+          echo "VM service account: $SERVICE_ACCOUNT"
+          
+          # Check if the service account already has the role by testing IAM policy
+          echo "Checking if service account has Artifact Registry Reader role..."
+          HAS_ROLE=$(gcloud projects get-iam-policy $PROJECT_ID \
+            --flatten="bindings[].members" \
+            --format="table(bindings.role)" \
+            --filter="bindings.members:serviceAccount:$SERVICE_ACCOUNT" 2>/dev/null | grep -c "artifactregistry.reader" || echo "0")
+          
+          if [ "$HAS_ROLE" != "0" ]; then
+            echo "✓ Service account already has Artifact Registry Reader role"
+          else
+            echo "Granting Artifact Registry Reader role to service account..."
+            if gcloud projects add-iam-policy-binding $PROJECT_ID \
+              --member="serviceAccount:$SERVICE_ACCOUNT" \
+              --role="roles/artifactregistry.reader" \
+              --condition=None 2>&1; then
+              echo "✓ Successfully granted Artifact Registry Reader role"
+            else
+              echo "ERROR: Failed to grant IAM role."
+              echo "The GitHub Actions service account needs 'Project IAM Admin' or 'Security Admin' role."
+              echo "You can grant the role manually with:"
+              echo "  gcloud projects add-iam-policy-binding $PROJECT_ID \\"
+              echo "    --member=\"serviceAccount:$SERVICE_ACCOUNT\" \\"
+              echo "    --role=\"roles/artifactregistry.reader\""
+              exit 1
+            fi
+          fi
+
       # Step 5: Deploy container to VM
       - name: Deploy RabbitMQ container to VM
         run: |-
@@ -257,35 +303,95 @@ jobs:
           fi
           
           # SSH into VM and deploy container
+          # Note: Container-Optimized OS uses the VM's service account for Docker auth
+          # The VM has --scopes=https://www.googleapis.com/auth/cloud-platform
+          # We need to configure Docker to use the metadata service for GAR authentication
           gcloud compute ssh $VM_NAME \
             --zone=$ZONE \
             --project=$PROJECT_ID \
             --command="
-              # Configure Docker authentication
-              gcloud auth configure-docker $GAR_LOCATION-docker.pkg.dev --quiet || true
+              set -e  # Exit on any error
               
-              # Pull latest image
-              docker pull $IMAGE_URI
+              echo 'Configuring Docker authentication for GAR...'
+              # On Container-Optimized OS, use the VM's service account via metadata service
+              # Get access token from metadata service
+              echo 'Retrieving access token from metadata service...'
+              TOKEN_RESPONSE=\$(curl -s -H 'Metadata-Flavor: Google' 'http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/token')
               
-              # Stop existing container if running
+              if [ -z \"\$TOKEN_RESPONSE\" ]; then
+                echo 'ERROR: Failed to get token response from metadata service'
+                echo 'Ensure VM has service account with cloud-platform scope'
+                exit 1
+              fi
+              
+              # Extract access token (handle JSON response)
+              TOKEN=\$(echo \"\$TOKEN_RESPONSE\" | grep -o '\"access_token\":\"[^\"]*\"' | cut -d'\"' -f4)
+              
+              if [ -z \"\$TOKEN\" ]; then
+                echo 'ERROR: Failed to extract access token from metadata service response'
+                echo 'Response: '\$TOKEN_RESPONSE
+                echo 'Ensure VM service account has proper IAM roles:'
+                echo '  - Artifact Registry Reader (roles/artifactregistry.reader)'
+                exit 1
+              fi
+              
+              echo 'Authenticating Docker with GAR...'
+              # Login to GAR using the token
+              echo \"\$TOKEN\" | docker login -u oauth2accesstoken --password-stdin $GAR_LOCATION-docker.pkg.dev || {
+                echo 'ERROR: Failed to authenticate Docker with GAR'
+                echo 'This usually means:'
+                echo '  1. VM service account lacks Artifact Registry Reader role'
+                echo '  2. Repository does not exist or is in wrong location'
+                echo '  3. Service account does not have cloud-platform scope'
+                echo ''
+                echo 'To fix, grant the service account the role:'
+                echo '  gcloud projects add-iam-policy-binding PROJECT_ID \\'
+                echo '    --member=\"serviceAccount:SERVICE_ACCOUNT_EMAIL\" \\'
+                echo '    --role=\"roles/artifactregistry.reader\"'
+                exit 1
+              }
+              
+              echo 'Pulling image from GAR...'
+              docker pull $IMAGE_URI || {
+                echo 'ERROR: Failed to pull image from GAR'
+                echo 'Image URI: $IMAGE_URI'
+                echo 'Ensure:'
+                echo '  1. VM service account has Artifact Registry Reader role'
+                echo '  2. Image exists in the repository'
+                echo '  3. Repository name and location are correct'
+                exit 1
+              }
+              
+              echo 'Stopping existing container if running...'
               docker stop rabbitmq 2>/dev/null || true
               docker rm rabbitmq 2>/dev/null || true
               
-              # Run RabbitMQ container with persistent volume
+              echo 'Starting RabbitMQ container...'
               docker run -d \
                 --name rabbitmq \
                 --restart unless-stopped \
                 -p 5672:5672 \
                 -p 15672:15672 \
                 -v rabbitmq_data:/var/lib/rabbitmq \
-                $IMAGE_URI
+                $IMAGE_URI || {
+                echo 'ERROR: Failed to start RabbitMQ container'
+                exit 1
+              }
               
-              # Verify container is running
+              echo 'Waiting for container to start...'
               sleep 5
-              docker ps | grep rabbitmq || exit 1
+              
+              echo 'Verifying container is running...'
+              if ! docker ps | grep -q rabbitmq; then
+                echo 'ERROR: RabbitMQ container is not running'
+                echo 'Container logs:'
+                docker logs rabbitmq || true
+                exit 1
+              fi
+              
               echo 'RabbitMQ container deployed successfully!'
             " \
-            --quiet || echo "Deployment completed (SSH may have timed out, but container should be running)"
+            --quiet
 
       # Step 6: Get VM details and output configuration
       - name: Show VM details and RabbitMQ configuration
