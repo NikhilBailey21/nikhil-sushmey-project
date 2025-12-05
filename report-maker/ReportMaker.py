@@ -32,11 +32,11 @@ class ReportMaker:
             if "was not found" in error_msg or "does not have access" in error_msg:
                 logger.error(
                     f"VertexAI model not found or access denied. "
-                    f"Model: gemini-1.5-pro, Project: {project_id}, Location: {location}. "
+                    f"Model: gemini-2.5-pro, Project: {project_id}, Location: {location}. "
                     f"Error: {error_msg}"
                 )
                 raise RuntimeError(
-                    f"VertexAI model 'gemini-1.5-pro' is not available in project '{project_id}' "
+                    f"VertexAI model 'gemini-2.5-pro' is not available in project '{project_id}' "
                     f"at location '{location}'. Please verify the model name and project permissions. "
                     f"Original error: {error_msg}"
                 ) from e
@@ -119,6 +119,7 @@ class ReportMaker:
             db = get_db()
             cursor = db.cursor()
             csv_string = cursor.execute(f"SELECT csv_content FROM uploaded_csvs WHERE id='{csv_id}'")
+            logger.info(f"Successfully fetched the csv_string: {csv_string}")
             cursor.close()
         except Exception as e:
             logger.error(f"ReportMaker failed to connect to db: {e}")
