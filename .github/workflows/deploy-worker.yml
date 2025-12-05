@@ -150,7 +150,7 @@ jobs:
             echo "vm_exists=false" >> $GITHUB_OUTPUT
           fi
 
-      # Step 4: Deploy container to VM
+      # Step 4: Deploy container to VM using metadata update
       - name: Deploy worker container to VM
         run: |-
           IMAGE_URI="$GAR_LOCATION-docker.pkg.dev/$PROJECT_ID/cloud-run-source-deploy/$IMAGE_NAME:$GITHUB_SHA"
@@ -160,48 +160,116 @@ jobs:
             echo "Error: All RabbitMQ secrets must be set: RABBITMQ_HOST, RABBITMQ_PORT, RABBITMQ_USER, RABBITMQ_PASS, RABBITMQ_VHOST"
             exit 1
           fi
-          ENV_ARGS="-e RABBITMQ_HOST=${{ secrets.RABBITMQ_HOST }}"
-          ENV_ARGS="$ENV_ARGS -e RABBITMQ_PORT=${{ secrets.RABBITMQ_PORT }}"
-          ENV_ARGS="$ENV_ARGS -e RABBITMQ_USER=${{ secrets.RABBITMQ_USER }}"
-          ENV_ARGS="$ENV_ARGS -e RABBITMQ_PASS=${{ secrets.RABBITMQ_PASS }}"
-          ENV_ARGS="$ENV_ARGS -e RABBITMQ_VHOST=${{ secrets.RABBITMQ_VHOST }}"
           
-          echo "Deploying worker container to VM..."
+          # Build environment variables as a single string for metadata
+          ENV_VARS="RABBITMQ_HOST=${{ secrets.RABBITMQ_HOST }},RABBITMQ_PORT=${{ secrets.RABBITMQ_PORT }},RABBITMQ_USER=${{ secrets.RABBITMQ_USER }},RABBITMQ_PASS=${{ secrets.RABBITMQ_PASS }},RABBITMQ_VHOST=${{ secrets.RABBITMQ_VHOST }}"
+          
+          echo "Deploying worker container to VM via metadata update..."
           
           # Wait for VM to be ready (if it was just created)
           if [ "${{ steps.vm-setup.outputs.vm_exists }}" = "false" ]; then
-            echo "Waiting for VM to be ready..."
-            sleep 30
+            echo "Waiting for VM to be ready (startup script will deploy container)..."
+            sleep 60  # Give startup script time to run
+            echo "VM should be ready. Container should be deployed by startup script."
+          else
+            # For existing VMs, update metadata and deploy via SSH
+            echo "Updating VM metadata with new image URI..."
+            gcloud compute instances add-metadata $VM_NAME \
+              --zone=$ZONE \
+              --project=$PROJECT_ID \
+              --metadata IMAGE_URI=$IMAGE_URI,ENV_VARS="$ENV_VARS",GAR_LOCATION=$GAR_LOCATION \
+              --quiet
+            
+            # Check if VM has external IP
+            HAD_EXTERNAL_IP=$(gcloud compute instances describe $VM_NAME \
+              --zone=$ZONE \
+              --project=$PROJECT_ID \
+              --format='get(networkInterfaces[0].accessConfigs[0].natIP)' 2>/dev/null || echo "")
+            
+            if [ -z "$HAD_EXTERNAL_IP" ]; then
+              # No external IP, temporarily add one for deployment
+              echo "Temporarily adding external IP for deployment..."
+              gcloud compute instances add-access-config $VM_NAME \
+                --zone=$ZONE \
+                --project=$PROJECT_ID \
+                --access-config-name="external-nat" \
+                --quiet
+              
+              # Wait for external IP to be assigned and SSH to be ready
+              echo "Waiting for external IP and SSH to be ready..."
+              sleep 30
+            fi
+            
+            # Get external IP (should exist now)
+            EXTERNAL_IP=$(gcloud compute instances describe $VM_NAME \
+              --zone=$ZONE \
+              --project=$PROJECT_ID \
+              --format='get(networkInterfaces[0].accessConfigs[0].natIP)' 2>/dev/null || echo "")
+            
+            if [ -n "$EXTERNAL_IP" ]; then
+              echo "Deploying container via SSH using external IP: $EXTERNAL_IP"
+              
+              # Deploy via SSH
+              gcloud compute ssh $VM_NAME \
+                --zone=$ZONE \
+                --project=$PROJECT_ID \
+                --command="
+                  # Get image URI and env vars from metadata
+                  IMAGE_URI=\$(curl -s -H \"Metadata-Flavor: Google\" http://metadata.google.internal/computeMetadata/v1/instance/attributes/IMAGE_URI)
+                  ENV_VARS=\$(curl -s -H \"Metadata-Flavor: Google\" http://metadata.google.internal/computeMetadata/v1/instance/attributes/ENV_VARS)
+                  GAR_LOC=\$(curl -s -H \"Metadata-Flavor: Google\" http://metadata.google.internal/computeMetadata/v1/instance/attributes/GAR_LOCATION)
+                  
+                  # Configure Docker authentication
+                  gcloud auth configure-docker \$GAR_LOC-docker.pkg.dev --quiet || true
+                  
+                  # Pull latest image
+                  docker pull \$IMAGE_URI
+                  
+                  # Stop existing container if running
+                  docker stop report-maker 2>/dev/null || true
+                  docker rm report-maker 2>/dev/null || true
+                  
+                  # Parse environment variables and build docker run command
+                  IFS=\",\" read -ra ENV_ARRAY <<< \"\$ENV_VARS\"
+                  ENV_ARGS=\"\"
+                  for env_pair in \"\${ENV_ARRAY[@]}\"; do
+                    ENV_ARGS=\"\$ENV_ARGS -e \$env_pair\"
+                  done
+                  
+                  # Run worker container with environment variables
+                  docker run -d \\
+                    --name report-maker \\
+                    --restart unless-stopped \\
+                    \$ENV_ARGS \\
+                    \$IMAGE_URI
+                  
+                  # Verify container is running
+                  sleep 5
+                  if docker ps | grep -q report-maker; then
+                    echo 'Worker container deployed successfully!'
+                  else
+                    echo 'ERROR: Container failed to start'
+                    docker logs report-maker 2>&1 || true
+                    exit 1
+                  fi
+                " \
+                --quiet
+              
+              # Remove external IP if we added it (it was originally missing)
+              if [ -z "$HAD_EXTERNAL_IP" ]; then
+                echo "Removing temporary external IP after deployment..."
+                gcloud compute instances delete-access-config $VM_NAME \
+                  --zone=$ZONE \
+                  --project=$PROJECT_ID \
+                  --access-config-name="external-nat" \
+                  --quiet || echo "Note: External IP removal failed (may have been pre-existing)"
+              fi
+            else
+              echo "ERROR: Could not obtain external IP for deployment"
+              echo "The VM metadata has been updated, but container deployment requires manual intervention."
+              exit 1
+            fi
           fi
-          
-          # SSH into VM and deploy container
-          gcloud compute ssh $VM_NAME \
-            --zone=$ZONE \
-            --project=$PROJECT_ID \
-            --command="
-              # Configure Docker authentication
-              gcloud auth configure-docker $GAR_LOCATION-docker.pkg.dev --quiet || true
-              
-              # Pull latest image
-              docker pull $IMAGE_URI
-              
-              # Stop existing container if running
-              docker stop report-maker 2>/dev/null || true
-              docker rm report-maker 2>/dev/null || true
-              
-              # Run worker container with environment variables
-              docker run -d \
-                --name report-maker \
-                --restart unless-stopped \
-                $ENV_ARGS \
-                $IMAGE_URI
-              
-              # Verify container is running
-              sleep 5
-              docker ps | grep report-maker || exit 1
-              echo 'Worker container deployed successfully!'
-            " \
-            --quiet || echo "Deployment completed (SSH may have timed out, but container should be running)"
 
       # Step 5: Show VM details
       - name: Show VM details
