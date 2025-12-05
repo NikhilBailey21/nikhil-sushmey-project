@@ -6,6 +6,7 @@ from flask import Blueprint, render_template, request, jsonify, g
 from werkzeug.utils import secure_filename
 from shared.db import insert_csv, get_db
 from flaskr.auth import login_required
+from flask import g
 from shared.rabbitmq_client import get_queue_info, publish_job, DEFAULT_QUEUE_NAME
 import markdown
 
@@ -128,13 +129,21 @@ def upload_csv():
             return jsonify({"error": "Failed to upload CSV"}), 500
 
         logger.info(f"CSV uploaded and stored with primary key: {row_id}")
+
+        # Fetch user_id
+        user_id = -1
+        if g.user:
+            logger.info(f"User {g.user['username']} id: {g.user['id']} has uploaded a csv")
+            user_id = g.user['id']
+        else:
+            logger.info(f"User not found")
         
         # Create a job in RabbitMQ to process this CSV
         job_data = {
             "csv_id": row_id,
             "filename": filename,
             "row_count": len(rows),
-            "user_id": g.user['id']
+            "user_id": user_id
         }
         
         try:
