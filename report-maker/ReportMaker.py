@@ -6,6 +6,7 @@ from datetime import datetime
 from enum import IntEnum
 import statistics
 import vertexai
+from typing import List, Dict
 from shared.db import get_db
 from vertexai.generative_models import GenerativeModel
 
