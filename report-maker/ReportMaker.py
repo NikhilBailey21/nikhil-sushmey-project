@@ -1,8 +1,10 @@
+from collections import defaultdict
 import json
 import os
 import logging
 from datetime import datetime
 from enum import IntEnum
+import statistics
 import vertexai
 from vertexai.generative_models import GenerativeModel
 
@@ -150,11 +152,236 @@ The amount should be the same as the transaction amount in cents (multiply by 10
             transactions.append(transaction)
         return transactions
 
-    def _calculate_metrics_from_transaction_list(self, transaction_list: list['Transaction']) -> dict:
-        pass
+
+    def _calculate_metrics_from_transaction_list(self, transaction_list: List['Transaction']) -> Dict:
+        """
+        Given a list of Transaction objects, calculate useful financial metrics
+        and return both the metrics and the original transaction data as dicts.
+
+        Output:
+            metrics
+        """
+        
+        # Defensive empty check
+        if not transaction_list:
+            return {
+                    "summary": {
+                        "totalSpend": 0,
+                        "transactionCount": 0,
+                        "avgTransaction": 0
+                    }
+            }
+
+        # ----------------------
+        # Helpers
+        # ----------------------
+        
+        # total
+        total_spend = sum(t.amountInCents for t in transaction_list)
+        count = len(transaction_list)
+        avg_txn = total_spend / count if count else 0
+
+        # ----------------------
+        # Category grouping
+        # ----------------------
+        category_groups = defaultdict(list)
+        for tx in transaction_list:
+            category_groups[tx.category].append(tx)
+        
+        category_totals = {
+            cat: sum(t.amountInCents for t in txns)
+            for cat, txns in category_groups.items()
+        }
+
+        category_counts = {
+            cat: len(txns)
+            for cat, txns in category_groups.items()
+        }
+
+        category_percentages = {
+            cat: (category_totals[cat] / total_spend) if total_spend else 0
+            for cat in category_totals.keys()
+        }
+
+        # ----------------------
+        # Merchant/Description clustering
+        # ----------------------
+        desc_groups = defaultdict(list)
+        for tx in transaction_list:
+            key = tx.description.lower().strip()
+            desc_groups[key].append(tx)
+
+        # top 5 merchant clusters by spend
+        top_descriptions = sorted(
+            desc_groups.items(),
+            key=lambda item: sum(t.amountInCents for t in item[1]),
+            reverse=True
+        )[:5]
+
+        top_desc_list = [
+            {
+                "description": desc,
+                "total": sum(t.amountInCents for t in txns),
+                "count": len(txns)
+            }
+            for desc, txns in top_descriptions
+        ]
+
+        # ----------------------
+        # Month time-series
+        # ----------------------
+        month_groups = defaultdict(list)
+        for tx in transaction_list:
+            month_key = tx.date.strftime("%Y-%m")
+            month_groups[month_key].append(tx)
+
+        month_totals = {
+            month: sum(t.amountInCents for t in txns)
+            for month, txns in month_groups.items()
+        }
+
+        # sort months chronologically: [('2024-01', x), ('2024-02', y)]
+        sorted_months = sorted(month_totals.items(), key=lambda x: x[0])
+
+        # month over month growth
+        mom_growth = {}
+        for i in range(1, len(sorted_months)):
+            prev_month, prev_value = sorted_months[i - 1]
+            curr_month, curr_value = sorted_months[i]
+            if prev_value > 0:
+                mom_growth[curr_month] = (curr_value - prev_value) / prev_value
+            else:
+                mom_growth[curr_month] = None
+
+        # ----------------------
+        # Concentration index
+        # ----------------------
+        # Herfindahl-Hirschman Index for spending diversity
+        hhi = sum(p ** 2 for p in category_percentages.values())
+
+        # ----------------------
+        # Volatility (Coefficient of Variation)
+        # ----------------------
+        volatility = 0
+        if len(month_totals) > 1:
+            vals = list(month_totals.values())
+            mean_val = statistics.mean(vals)
+            if mean_val > 0:
+                volatility = statistics.stdev(vals) / mean_val
+
+        # ----------------------
+        # Final structured result
+        # ----------------------
+        metrics = {
+            "summary": {
+                "totalSpend": total_spend,
+                "transactionCount": count,
+                "avgTransaction": avg_txn,
+            },
+            "categories": {
+                "totals": category_totals,
+                "percentages": category_percentages,
+                "counts": category_counts,
+            },
+            "timeSeries": {
+                "monthTotals": month_totals,
+                "monthGrowth": mom_growth,
+            },
+            "advanced": {
+                "concentrationIndex": hhi,
+                "volatility": volatility,
+            },
+            "topMerchants": top_desc_list,
+        }
+
+        return metrics
 
     def _make_markdown_report_from_transaction_list(self, transaction_list: list['Transaction'], metrics: dict) -> str:
-        pass
+
+        vertexai_prompt = f"""
+        You are a financial data analysis assistant.
+
+        You will be given:
+        1. A list of financial transactions.
+        2. A dictionary of pre-computed metrics derived from these transactions.
+
+        Your tasks are:
+
+        (A) Display all provided metrics in a clean markdown report using well-structured tables.
+            - Present metrics exactly as provided.
+            - Do not recompute or invent values.
+            - If a metric is missing, use “Not available”.
+
+        (B) Generate short, conservative, data-backed insights based only on the provided metrics and transactions.
+            - Insights must be strictly based on observed numerical patterns in the data.
+            - If the data is insufficient for an insight, explicitly write: “Insufficient data”.
+            - Do not speculate on the user’s behavior, motives, preferences, or intents.
+            - Do not infer information that is not directly supported by the data.
+
+        (C) Output format must be a **valid markdown string** that can be rendered as a full standalone report.
+
+        Report Structure (strictly follow this order):
+
+        # Financial Report
+
+        ## Summary Metrics
+        (Use a metrics table)
+
+        ## Category Breakdown
+        (Use a table showing category totals, counts, percentages if provided)
+
+        ## Time-based Metrics
+        (Use tables if time-based metrics exist, otherwise state: “Not available”)
+
+        ## Insights
+        - Bullet list of insights
+        - Each insight must start with a clear observational fact.
+        - No storytelling. No assumptions.
+
+        Formatting Rules:
+        - Prefer markdown tables for metrics.
+        - Never fabricate or estimate numeric values.
+        - Never describe trends that are not numerically proven.
+        - Do not use speculative language (“may indicate”, “likely”, “probably”).
+
+        Important:
+        - The metrics provided are authoritative and correct. Do not attempt to recalculate them.
+        - If a useful metric is not provided, do not create it yourself.
+        - You may reference individual transactions only to support an insight (e.g., frequency, repetition), but do not summarize all transactions.
+
+        Example safe insight pattern:
+        - “Spending in the ‘Food’ category represents 26 percent of total spending. (Based on provided metrics)”
+
+        Example unsafe patterns (disallowed):
+        - “You like eating out a lot.”
+        - “This trend suggests the user is traveling for work.”
+        - “Probably spent money on vacation.”
+
+        Your final response must contain **only the markdown report**, with no explanation of how you created it.
+
+        """
+
+        report_input = {
+            "transactions": transaction_list,
+            "metrics": metrics,
+        }
+
+        response = self.model.generate_content([
+            {
+                "role": "system",
+                "content": vertexai_prompt
+            },
+            {
+                "role": "user",
+                "content": "Generate the financial report using the provided transaction data and metrics."
+            },
+            {
+                "role": "model_input",
+                "content": json.dumps(report_input)
+            }
+        ])
+
+        return json.loads(response.text)
 
     def _upload_markdown_report_to_database(self, csv_id: int, markdown_report: str):
         pass
