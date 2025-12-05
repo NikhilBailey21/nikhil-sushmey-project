@@ -93,20 +93,25 @@ def insert_csv(filename: str, csv_content: str) -> int:
         Row ID if successful, -1 if failed
     """
     db = get_db()
+    cursor = None
     
     try:
-        with db.cursor() as connection:  # Ensures closing
-            connection.execute('INSERT INTO uploaded_csvs (filename, csv_content) VALUES (%s, %s) RETURNING id',
-                (filename, csv_content),
-            )
-            row_id = connection.fetchone()[0]
-            db.commit()  # commit the transaction
-            
+        cursor = db.cursor()
+        cursor.execute('INSERT INTO uploaded_csvs (filename, csv_content) VALUES (%s, %s) RETURNING id',
+            (filename, csv_content),
+        )
+        row_id = cursor.fetchone()[0]
+        db.commit()  # commit the transaction
+        cursor.close()
+        
         logger.info(f"✓ CSV inserted with ID: {row_id}")
         return row_id
         
     except Exception as e:
         logger.error(f"✗ Error inserting CSV: {e}")
+        if cursor:
+            cursor.close()
+        db.rollback()
         return -1
 
 
