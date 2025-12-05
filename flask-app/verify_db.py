@@ -1,6 +1,13 @@
 #!/usr/bin/env python3
 """Verify database tables exist after initialization."""
 import os
+import sys
+
+# Add repo root to Python path to allow importing shared modules
+_repo_root = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+if _repo_root not in sys.path:
+    sys.path.insert(0, _repo_root)
+
 from flaskr import create_app
 from shared.db import get_db
 

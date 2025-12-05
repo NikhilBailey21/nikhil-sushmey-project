@@ -121,6 +121,7 @@ jobs:
         id: verify-db
         working-directory: ./flask-app
         env:
+          PYTHONPATH: ${{ github.workspace }}
           CLOUD_SQL_CONNECTION_NAME: ${{ secrets.CLOUD_SQL_CONNECTION_NAME }}
           DB_NAME: ${{ secrets.DB_NAME }}
           DB_USER: ${{ secrets.DB_USER }}
