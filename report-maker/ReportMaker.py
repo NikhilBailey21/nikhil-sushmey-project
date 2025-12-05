@@ -134,6 +134,8 @@ class ReportMaker:
         Returns:
             tuple: (parsed_json, raw_response_text) - The parsed JSON and the raw AI response text
         """
+
+        logger.info(f"This is the csv_string before processing{transaction_data}")
         schema = {
             "type": "array",
             "items": {
@@ -176,7 +178,7 @@ The amount should be the same as the transaction amount in cents (multiply by 10
         # Extract JSON from response (might have markdown code blocks)
         response_text = response.text.strip()
         raw_response_text = response_text  # Store original for logging
-        
+        logger.info(f"This is AI slop {response_text}")
         # Remove markdown code blocks if present
         if response_text.startswith("```"):
             lines = response_text.split("\n")
