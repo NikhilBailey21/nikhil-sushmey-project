@@ -5,7 +5,7 @@ from flask import render_template, request, jsonify
 from werkzeug.utils import secure_filename
 from flaskr.db import insert_csv
 from flaskr.auth import login_required
-from flaskr.rabbitmq_client import get_queue_info, DEFAULT_QUEUE_NAME
+from flaskr.rabbitmq_client import get_queue_info, publish_job, DEFAULT_QUEUE_NAME
 
 import os
 import csv
@@ -109,10 +109,30 @@ def upload_csv():
             return jsonify({"error": "Failed to upload CSV"}), 500
 
         logger.info(f"CSV uploaded and stored with primary key: {row_id}")
+        
+        # Create a job in RabbitMQ to process this CSV
+        job_data = {
+            "csv_id": row_id,
+            "filename": filename,
+            "row_count": len(rows)
+        }
+        
+        try:
+            job_published = publish_job(DEFAULT_QUEUE_NAME, job_data)
+            if job_published:
+                logger.info(f"Report generation job added to queue for CSV ID: {row_id}")
+            else:
+                logger.warning(f"Failed to add job to queue for CSV ID: {row_id}")
+        except Exception as e:
+            logger.error(f"Error adding job to queue: {str(e)}")
+            # Don't fail the upload if queue is unavailable, but log the error
+            job_published = False
+        
         return jsonify({
             "success": True,
             "id": row_id,
-            "rows": len(rows)
+            "rows": len(rows),
+            "job_queued": job_published if 'job_published' in locals() else False
         }), 200
 
     except Exception as e:

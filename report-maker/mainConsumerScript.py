@@ -1,0 +1,70 @@
+#!/usr/bin/env python3
+"""RabbitMQ job consumer worker."""
+
+import json
+import logging
+import pika
+from rabbitmq_client import consume_jobs, acknowledge_message, reject_message, DEFAULT_QUEUE_NAME
+
+# Set up logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
+logger = logging.getLogger(__name__)
+
+
+def process_job(channel: pika.channel.Channel, method: pika.spec.Basic.Deliver, 
+                properties: pika.spec.BasicProperties, body: bytes):
+    """
+    Process a job from the RabbitMQ queue.
+    
+    Args:
+        channel: The channel the message was received on
+        method: The method frame from the message
+        properties: Message properties
+        body: The message body (JSON string)
+    """
+    try:
+        # Parse the job data
+        job_data = json.loads(body.decode('utf-8'))
+        
+        logger.info("=" * 60)
+        logger.info("Received job from queue")
+        logger.info(f"Job data: {json.dumps(job_data, indent=2)}")
+        logger.info(f"CSV ID: {job_data.get('csv_id')}")
+        logger.info(f"Filename: {job_data.get('filename')}")
+        logger.info(f"Row count: {job_data.get('row_count')}")
+        logger.info("=" * 60)
+        
+        # TODO: Process the CSV here
+        # For now, just log and acknowledge
+        
+        # Acknowledge the message to remove it from the queue
+        acknowledge_message(channel, method)
+        logger.info(f"Job processed and acknowledged for CSV ID: {job_data.get('csv_id')}")
+        
+    except json.JSONDecodeError as e:
+        logger.error(f"Failed to parse job data as JSON: {str(e)}")
+        logger.error(f"Raw body: {body}")
+        # Reject the message and don't requeue (malformed message)
+        reject_message(channel, method, requeue=False)
+        
+    except Exception as e:
+        logger.error(f"Error processing job: {str(e)}", exc_info=True)
+        # Reject the message and requeue it (temporary failure)
+        reject_message(channel, method, requeue=True)
+
+
+if __name__ == "__main__":
+    logger.info("Starting RabbitMQ job consumer...")
+    logger.info(f"Consuming from queue: {DEFAULT_QUEUE_NAME}")
+    logger.info("Waiting for jobs. Press Ctrl+C to stop.")
+    
+    try:
+        consume_jobs(DEFAULT_QUEUE_NAME, process_job, auto_ack=False)
+    except KeyboardInterrupt:
+        logger.info("Consumer stopped by user")
+    except Exception as e:
+        logger.error(f"Consumer error: {str(e)}", exc_info=True)
+

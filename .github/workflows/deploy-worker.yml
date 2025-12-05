@@ -1,4 +1,4 @@
-name: Deploy Hello World (Worker)
+name: Deploy Report Maker (Worker)
 
 on:
   push:
@@ -6,14 +6,14 @@ on:
       - main
       - master
     paths:
-      - 'hello-world/**'
+      - 'report-maker/**'
       - '.github/workflows/deploy-worker.yml'
   workflow_dispatch: # Allows manual triggering
 
 env:
   PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
   GAR_LOCATION: ${{ secrets.GCP_REGION }}
-  SERVICE_NAME: hello-world-app
+  SERVICE_NAME: report-maker-app
   REGION: ${{ secrets.GCP_REGION }}
 
 jobs:
@@ -38,7 +38,7 @@ jobs:
       - name: Configure Docker for GCR
         run: gcloud auth configure-docker $GAR_LOCATION-docker.pkg.dev --quiet
 
-      # Step 1: Test (simple syntax check for hello-world)
+      # Step 1: Test (simple syntax check for report-maker)
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
@@ -46,15 +46,15 @@ jobs:
 
       - name: Test Python script syntax
         id: test
-        working-directory: ./hello-world
+        working-directory: ./report-maker
         run: |-
-          python -m py_compile hello.py
+          python -m py_compile mainConsumerScript.py
           echo "Syntax check passed!"
 
       # Step 2: Build
       - name: Build and submit container image
         id: build
-        working-directory: ./hello-world
+        working-directory: ./report-maker
         run: |-
           # Submit build asynchronously to avoid log streaming permission issues
           BUILD_ID=$(gcloud builds submit --async --tag $GAR_LOCATION-docker.pkg.dev/$PROJECT_ID/cloud-run-source-deploy/$SERVICE_NAME:$GITHUB_SHA --format="value(id)")
