@@ -141,10 +141,14 @@ jobs:
               echo '  ENV_ARGS="$ENV_ARGS -e $env_pair"'
               echo 'done'
               echo ''
-              echo '# Run worker container'
+              echo '# Run worker container with Cloud Logging driver'
+              echo 'PROJECT_ID=$(curl -s -H "Metadata-Flavor: Google" http://metadata.google.internal/computeMetadata/v1/project/project-id)'
               echo 'docker run -d \'
               echo '  --name report-maker \'
               echo '  --restart unless-stopped \'
+              echo '  --log-driver=gcplogs \'
+              echo '  --log-opt gcp-project=$PROJECT_ID \'
+              echo '  --log-opt labels=container_name,report-maker \'
               echo '  $ENV_ARGS \'
               echo '  $IMAGE_URI'
             } > /tmp/startup-script.sh
@@ -264,10 +268,16 @@ jobs:
                     ENV_ARGS=\"\$ENV_ARGS -e \$env_pair\"
                   done
                   
-                  # Run worker container with environment variables
+                  # Get project ID for Cloud Logging
+                  PROJECT_ID=\$(curl -s -H \"Metadata-Flavor: Google\" http://metadata.google.internal/computeMetadata/v1/project/project-id)
+                  
+                  # Run worker container with environment variables and Cloud Logging driver
                   docker run -d \\
                     --name report-maker \\
                     --restart unless-stopped \\
+                    --log-driver=gcplogs \\
+                    --log-opt gcp-project=\$PROJECT_ID \\
+                    --log-opt labels=container_name,report-maker \\
                     \$ENV_ARGS \\
                     \$IMAGE_URI
                   
