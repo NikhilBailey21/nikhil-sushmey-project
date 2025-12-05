@@ -10,11 +10,244 @@
 
 {% block content %}
 <div class="reports-page">
-  <div class="row justify-content-center">
-    <div class="col-md-8 text-center">
-      <h2>Hello World</h2>
+  {% if error %}
+    <div class="alert alert-danger" role="alert">
+      <i class="bi bi-exclamation-triangle me-2"></i>Error loading reports: {{ error }}
     </div>
-  </div>
-</div>
-{% endblock %}
+  {% endif %}
 
+  {% if reports|length == 0 %}
+    <div class="empty-state text-center py-5">
+      <div class="empty-icon mb-4">
+        <i class="bi bi-file-earmark-text" style="font-size: 4rem; color: #bdc3c7;"></i>
+      </div>
+      <h3 class="text-muted mb-3">No Reports Yet</h3>
+      <p class="text-muted">Upload a CSV file to generate your first transaction analysis report.</p>
+      <a href="{{ url_for('transactionAnalyzer.index') }}" class="btn btn-primary mt-3">
+        <i class="bi bi-upload me-2"></i>Upload CSV
+      </a>
+    </div>
+  {% else %}
+    <div class="reports-container">
+      {% for report in reports %}
+        <div class="report-card mb-4">
+          <div class="report-header">
+            <div class="report-title-section">
+              <h3 class="report-title">
+                <i class="bi bi-file-earmark-text me-2"></i>{{ report.name }}
+              </h3>
+              <p class="report-date text-muted">
+                <i class="bi bi-calendar3 me-1"></i>
+                Generated: {{ report.generatedat.strftime('%B %d, %Y at %I:%M %p') if report.generatedat else 'Unknown' }}
+              </p>
+            </div>
+          </div>
+          <div class="report-content">
+            <div class="markdown-body">
+              {{ report.report_html|safe }}
+            </div>
+          </div>
+        </div>
+      {% endfor %}
+    </div>
+  {% endif %}
+</div>
+
+<style>
+.reports-page {
+  max-width: 1000px;
+  margin: 0 auto;
+  padding: 2rem 1rem;
+}
+
+.empty-state {
+  padding: 4rem 2rem;
+}
+
+.empty-icon {
+  opacity: 0.5;
+}
+
+.reports-container {
+  margin-top: 2rem;
+}
+
+.report-card {
+  background: white;
+  border-radius: 12px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+  overflow: hidden;
+  transition: box-shadow 0.3s ease;
+}
+
+.report-card:hover {
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.15);
+}
+
+.report-header {
+  padding: 1.5rem;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: white;
+}
+
+.report-title {
+  margin: 0;
+  font-size: 1.5rem;
+  font-weight: 600;
+  color: white;
+}
+
+.report-date {
+  margin: 0.5rem 0 0 0;
+  font-size: 0.9rem;
+  color: rgba(255, 255, 255, 0.9);
+}
+
+.report-content {
+  padding: 2rem;
+}
+
+.markdown-body {
+  line-height: 1.6;
+  color: #333;
+}
+
+.markdown-body h1,
+.markdown-body h2,
+.markdown-body h3,
+.markdown-body h4,
+.markdown-body h5,
+.markdown-body h6 {
+  margin-top: 1.5em;
+  margin-bottom: 0.5em;
+  font-weight: 600;
+  line-height: 1.25;
+}
+
+.markdown-body h1 {
+  font-size: 2em;
+  border-bottom: 1px solid #eaecef;
+  padding-bottom: 0.3em;
+}
+
+.markdown-body h2 {
+  font-size: 1.5em;
+  border-bottom: 1px solid #eaecef;
+  padding-bottom: 0.3em;
+}
+
+.markdown-body h3 {
+  font-size: 1.25em;
+}
+
+.markdown-body p {
+  margin-bottom: 1em;
+}
+
+.markdown-body ul,
+.markdown-body ol {
+  margin-bottom: 1em;
+  padding-left: 2em;
+}
+
+.markdown-body li {
+  margin-bottom: 0.5em;
+}
+
+.markdown-body code {
+  background-color: #f6f8fa;
+  border-radius: 3px;
+  font-size: 85%;
+  padding: 0.2em 0.4em;
+  font-family: 'Courier New', monospace;
+}
+
+.markdown-body pre {
+  background-color: #f6f8fa;
+  border-radius: 6px;
+  padding: 1em;
+  overflow-x: auto;
+  margin-bottom: 1em;
+}
+
+.markdown-body pre code {
+  background-color: transparent;
+  padding: 0;
+  font-size: 100%;
+}
+
+.markdown-body blockquote {
+  border-left: 4px solid #dfe2e5;
+  padding-left: 1em;
+  margin-left: 0;
+  color: #6a737d;
+}
+
+.markdown-body table {
+  border-collapse: collapse;
+  width: 100%;
+  margin-bottom: 1em;
+}
+
+.markdown-body table th,
+.markdown-body table td {
+  border: 1px solid #dfe2e5;
+  padding: 0.6em 1em;
+  text-align: left;
+}
+
+.markdown-body table th {
+  background-color: #f6f8fa;
+  font-weight: 600;
+}
+
+.markdown-body table tr:nth-child(even) {
+  background-color: #f9fafb;
+}
+
+.markdown-body a {
+  color: #667eea;
+  text-decoration: none;
+}
+
+.markdown-body a:hover {
+  text-decoration: underline;
+}
+
+.markdown-body strong {
+  font-weight: 600;
+}
+
+.markdown-body em {
+  font-style: italic;
+}
+
+.markdown-body hr {
+  border: none;
+  border-top: 1px solid #eaecef;
+  margin: 2em 0;
+}
+
+@media (max-width: 768px) {
+  .reports-page {
+    padding: 1rem;
+  }
+
+  .report-header {
+    padding: 1rem;
+  }
+
+  .report-title {
+    font-size: 1.25rem;
+  }
+
+  .report-content {
+    padding: 1.5rem;
+  }
+
+  .markdown-body {
+    font-size: 0.9rem;
+  }
+}
+</style>
+{% endblock %}

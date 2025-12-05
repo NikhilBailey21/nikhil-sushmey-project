@@ -1,22 +1,13 @@
 import csv
 import logging
-from flask import Blueprint
-from flask import render_template, request, jsonify
+import os
+from io import StringIO
+from flask import Blueprint, render_template, request, jsonify, g
 from werkzeug.utils import secure_filename
-from shared.db import insert_csv
+from shared.db import insert_csv, get_db
 from flaskr.auth import login_required
 from shared.rabbitmq_client import get_queue_info, publish_job, DEFAULT_QUEUE_NAME
-
-import os
-import csv
-import logging
-import pg8000
-from dotenv import load_dotenv
-from io import StringIO
-from flask import Flask, request, jsonify
-from sqlalchemy import create_engine, text
-from werkzeug.utils import secure_filename
-from google.cloud.sql.connector import Connector
+import markdown
 
 
 bp = Blueprint("transactionAnalyzer", __name__, url_prefix="/analyzer")
@@ -36,7 +27,35 @@ def index():
 @login_required
 def reports():
     """Reports page - requires login."""
-    return render_template("transactionAnalyzer/reports.html")
+    try:
+        db = get_db()
+        cursor = db.cursor()
+        
+        # Query reports for the current user, ordered by most recent first
+        cursor.execute(
+            'SELECT id, name, report, generatedat FROM reports WHERE userid = %s ORDER BY generatedat DESC',
+            (g.user['id'],)
+        )
+        reports_data = cursor.fetchall()
+        cursor.close()
+        
+        # Convert tuples to dictionaries and render markdown to HTML
+        # Tuple: (id, name, report, generatedat)
+        reports = []
+        for row in reports_data:
+            # Render markdown to HTML
+            report_html = markdown.markdown(row[2], extensions=['fenced_code', 'tables', 'nl2br'])
+            reports.append({
+                'id': row[0],
+                'name': row[1],
+                'report_html': report_html,
+                'generatedat': row[3]
+            })
+        
+        return render_template("transactionAnalyzer/reports.html", reports=reports)
+    except Exception as e:
+        logger.error(f"Error fetching reports: {str(e)}")
+        return render_template("transactionAnalyzer/reports.html", reports=[], error=str(e))
 
 
 @bp.route("/queue/status")
