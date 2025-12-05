@@ -48,7 +48,7 @@ class ReportMaker:
             cursor = None
             db = get_db()
             cursor = db.cursor()
-            csv_string = cursor.execute(f"SELECT csv_content FROM uploaded_csvs WHERE csv_id='{csv_id}'")
+            csv_string = cursor.execute(f"SELECT csv_content FROM uploaded_csvs WHERE id='{csv_id}'")
             cursor.close()
         except Exception as e:
             logger.error(f"ReportMaker failed to connect to db: {e}")
