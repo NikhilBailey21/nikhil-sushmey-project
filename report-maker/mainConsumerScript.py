@@ -52,8 +52,14 @@ def process_job(channel: pika.channel.Channel, method: pika.spec.Basic.Deliver,
         try:
             rm = ReportMaker()
             rm.make_report(csv_id=csv_id, user_id=user_id)
+        except RuntimeError as e:
+            # Model configuration/permission errors - don't requeue
+            logger.error(f"VertexAI configuration error: {e}")
+            reject_message(channel, method, requeue=False)
+            logger.info("Job rejected and discarded due to configuration error")
+            return
         except Exception as e:
-            logger.error(f"Failed to create VertexAI object: {e}")
+            logger.error(f"Failed to create VertexAI object or process report: {e}")
             raise
         
         # Acknowledge the message to remove it from the queue

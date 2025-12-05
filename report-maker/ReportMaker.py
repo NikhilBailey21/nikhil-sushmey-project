@@ -10,24 +10,49 @@ import vertexai
 from typing import List, Dict
 from shared.db import get_db
 from vertexai.generative_models import GenerativeModel, GenerationConfig
+from google.api_core import exceptions as google_exceptions
 
 logger = logging.getLogger(__name__)
+
+
+class ValidationError(Exception):
+    """Exception raised when structured JSON validation fails."""
+    pass
+
 
 class ReportMaker:
     def __init__(self):
         project_id = os.getenv("PROJECT_ID")
         location = "us-central1"
-        vertexai.init(project=project_id, location=location)
-        self.model = GenerativeModel("gemini-1.5-pro")
+        try:
+            vertexai.init(project=project_id, location=location)
+            self.model = GenerativeModel("gemini-1.5-pro")
+        except (google_exceptions.NotFound, google_exceptions.PermissionDenied) as e:
+            error_msg = str(e)
+            if "was not found" in error_msg or "does not have access" in error_msg:
+                logger.error(
+                    f"VertexAI model not found or access denied. "
+                    f"Model: gemini-1.5-pro, Project: {project_id}, Location: {location}. "
+                    f"Error: {error_msg}"
+                )
+                raise RuntimeError(
+                    f"VertexAI model 'gemini-1.5-pro' is not available in project '{project_id}' "
+                    f"at location '{location}'. Please verify the model name and project permissions. "
+                    f"Original error: {error_msg}"
+                ) from e
+            raise
+        except Exception as e:
+            logger.error(f"Failed to initialize VertexAI: {e}")
+            raise
 
     def make_report(self, csv_id: int, user_id: int) -> str:
         csv_string = self._get_csv_string_from_database(csv_id) # Database Call
  
         for attemptCount in range(3):
+            raw_ai_output = None
             try:
-                transaction_data = self._convert_transaction_data_to_structured_json(csv_string) # VertexAI Call
-                if not self._validate_structured_json(transaction_data):
-                    continue
+                transaction_data, raw_ai_output = self._convert_transaction_data_to_structured_json(csv_string) # VertexAI Call
+                self._validate_structured_json(transaction_data)
                 transaction_list = self._convert_structured_json_to_transaction_objects(transaction_data)
 
                 metrics = self._calculate_metrics_from_transaction_list(transaction_list)
@@ -35,11 +60,56 @@ class ReportMaker:
                 self._upload_markdown_report_to_database(markdown_report, user_id) # Database Call
                 return markdown_report
 
-            except Exception as error:
+            except ValidationError as error:
+                # Validation failed - log the error and the full AI output
+                logger.warning(
+                    f"Validation failed for structured JSON, attempt {attemptCount + 1} of 3. "
+                    f"Reason: {str(error)}"
+                )
+                if raw_ai_output:
+                    logger.warning(
+                        f"Full AI output for failed validation (attempt {attemptCount + 1}):\n{raw_ai_output}"
+                    )
                 if attemptCount == 2:
+                    # On final attempt, raise the validation error
+                    raise
+                continue
+            except (google_exceptions.NotFound, google_exceptions.PermissionDenied) as error:
+                # Model not found or permission denied - don't retry, fail immediately
+                error_msg = str(error)
+                logger.error(
+                    f"VertexAI model access error (attempt {attemptCount + 1} of 3): {error_msg}. "
+                    f"This is a configuration/permission issue and will not be retried."
+                )
+                raise RuntimeError(
+                    f"VertexAI model access error: {error_msg}. "
+                    f"Please verify the model name and project permissions."
+                ) from error
+            except Exception as error:
+                # Check if it's a model not found error by message (in case exception type isn't caught)
+                error_msg = str(error)
+                if "was not found" in error_msg or "does not have access" in error_msg or "NOT_FOUND" in error_msg:
+                    logger.error(
+                        f"VertexAI model not found or access denied (attempt {attemptCount + 1} of 3): {error_msg}. "
+                        f"This is a configuration/permission issue and will not be retried."
+                    )
+                    raise RuntimeError(
+                        f"VertexAI model access error: {error_msg}. "
+                        f"Please verify the model name and project permissions."
+                    ) from error
+                
+                # For other errors, retry up to 3 times
+                if attemptCount == 2:
+                    logger.error(
+                        f"Failed to make report after all 3 attempts. "
+                        f"Final error: {type(error).__name__}: {str(error)}"
+                    )
                     raise error
                 else:
-                    logger.info(f"Failed to make report, attempt {attemptCount + 1} of 3")
+                    logger.warning(
+                        f"Failed to make report, attempt {attemptCount + 1} of 3. "
+                        f"Error: {type(error).__name__}: {str(error)}"
+                    )
 
         raise Exception("Failed to convert transaction data to structured JSON after all attempts.")
 
@@ -58,6 +128,12 @@ class ReportMaker:
         return csv_string
 
     def _convert_transaction_data_to_structured_json(self, transaction_data: str):
+        """
+        Convert transaction data to structured JSON using VertexAI.
+        
+        Returns:
+            tuple: (parsed_json, raw_response_text) - The parsed JSON and the raw AI response text
+        """
         schema = {
             "type": "array",
             "items": {
@@ -99,6 +175,7 @@ The amount should be the same as the transaction amount in cents (multiply by 10
 
         # Extract JSON from response (might have markdown code blocks)
         response_text = response.text.strip()
+        raw_response_text = response_text  # Store original for logging
         
         # Remove markdown code blocks if present
         if response_text.startswith("```"):
@@ -109,53 +186,84 @@ The amount should be the same as the transaction amount in cents (multiply by 10
                 lines = lines[:-1]
             response_text = "\n".join(lines)
         
-        return json.loads(response_text)
+        parsed_json = json.loads(response_text)
+        return parsed_json, raw_response_text
 
-    def _validate_structured_json(self, structured_json: list) -> bool:
+    def _validate_structured_json(self, structured_json: list) -> None:
         """
         Validate that the structured JSON matches the expected schema.
         
         Args:
             structured_json: List of transaction dictionaries
             
-        Returns:
-            True if valid, False otherwise
+        Raises:
+            ValidationError: If validation fails, with a detailed reason
         """
         if not isinstance(structured_json, list):
-            return False
+            raise ValidationError(f"Expected a list, but got {type(structured_json).__name__}")
         
-        for transaction in structured_json:
+        if len(structured_json) == 0:
+            raise ValidationError("Transaction list is empty")
+        
+        for idx, transaction in enumerate(structured_json):
             if not isinstance(transaction, dict):
-                return False
+                raise ValidationError(
+                    f"Transaction at index {idx} is not a dictionary, got {type(transaction).__name__}"
+                )
             
+            # Check required fields
+            missing_fields = []
             if "amountInCents" not in transaction:
-                return False
+                missing_fields.append("amountInCents")
             if "description" not in transaction:
-                return False
+                missing_fields.append("description")
             if "category" not in transaction:
-                return False
+                missing_fields.append("category")
             if "date" not in transaction:
-                return False
+                missing_fields.append("date")
             
+            if missing_fields:
+                raise ValidationError(
+                    f"Transaction at index {idx} is missing required fields: {', '.join(missing_fields)}"
+                )
+            
+            # Check field types
             if not isinstance(transaction["amountInCents"], int):
-                return False
+                raise ValidationError(
+                    f"Transaction at index {idx}: 'amountInCents' must be an integer, "
+                    f"got {type(transaction['amountInCents']).__name__} with value: {transaction['amountInCents']}"
+                )
             if not isinstance(transaction["description"], str):
-                return False
+                raise ValidationError(
+                    f"Transaction at index {idx}: 'description' must be a string, "
+                    f"got {type(transaction['description']).__name__}"
+                )
             if not isinstance(transaction["category"], str):
-                return False
+                raise ValidationError(
+                    f"Transaction at index {idx}: 'category' must be a string, "
+                    f"got {type(transaction['category']).__name__}"
+                )
             if not isinstance(transaction["date"], str):
-                return False
+                raise ValidationError(
+                    f"Transaction at index {idx}: 'date' must be a string, "
+                    f"got {type(transaction['date']).__name__}"
+                )
             
+            # Check category validity
             if transaction["category"] not in VALID_CATEGORIES:
-                return False
+                raise ValidationError(
+                    f"Transaction at index {idx}: 'category' must be one of {VALID_CATEGORIES}, "
+                    f"got '{transaction['category']}'"
+                )
 
             # Validate that the date is a valid date in the ISO 8601 format (YYYY-MM-DD)
             try:
                 datetime.strptime(transaction["date"], "%Y-%m-%d")
-            except (ValueError, TypeError):
-                return False
-        
-        return True
+            except (ValueError, TypeError) as e:
+                raise ValidationError(
+                    f"Transaction at index {idx}: 'date' must be in ISO 8601 format (YYYY-MM-DD), "
+                    f"got '{transaction['date']}'. Error: {str(e)}"
+                )
 
     def _convert_structured_json_to_transaction_objects(self, structured_json: list) -> list['Transaction']:
         """
