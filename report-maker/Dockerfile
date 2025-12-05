@@ -17,6 +17,7 @@ COPY shared /app/shared
 
 # Copy application code
 COPY report-maker/mainConsumerScript.py .
+COPY report-maker/ReportMaker.py .
 
 # Make script executable
 RUN chmod +x mainConsumerScript.py
