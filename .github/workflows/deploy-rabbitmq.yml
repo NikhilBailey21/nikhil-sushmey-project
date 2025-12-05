@@ -131,6 +131,36 @@ jobs:
           # Check if VM exists
           if gcloud compute instances describe $VM_NAME --zone=$ZONE --project=$PROJECT_ID 2>/dev/null; then
             echo "VM instance '$VM_NAME' already exists"
+            
+            # Check if VM has the static IP assigned
+            CURRENT_IP=$(gcloud compute instances describe $VM_NAME \
+              --zone=$ZONE \
+              --project=$PROJECT_ID \
+              --format='get(networkInterfaces[0].accessConfigs[0].natIP)' 2>/dev/null || echo "")
+            
+            if [ "$CURRENT_IP" != "$STATIC_IP" ]; then
+              echo "VM has IP $CURRENT_IP, but static IP is $STATIC_IP. Updating..."
+              
+              # Delete existing access config if it exists
+              if [ -n "$CURRENT_IP" ]; then
+                echo "Removing existing access config..."
+                gcloud compute instances delete-access-config $VM_NAME \
+                  --zone=$ZONE \
+                  --project=$PROJECT_ID \
+                  --access-config-name="External NAT" 2>/dev/null || true
+              fi
+              
+              # Add static IP
+              echo "Assigning static IP $STATIC_IP to existing VM..."
+              gcloud compute instances add-access-config $VM_NAME \
+                --zone=$ZONE \
+                --project=$PROJECT_ID \
+                --access-config-name="External NAT" \
+                --address=$STATIC_IP
+            else
+              echo "VM already has static IP $STATIC_IP assigned"
+            fi
+            
             echo "vm_exists=true" >> $GITHUB_OUTPUT
           else
             echo "Creating VM instance '$VM_NAME' with static IP $STATIC_IP..."
@@ -163,7 +193,8 @@ jobs:
               echo '  $IMAGE_URI'
             } > /tmp/startup-script.sh
 
-            # Create VM with startup script
+            # Create VM without external IP first (to avoid conflict with static IP)
+            echo "Creating VM without external IP..."
             gcloud compute instances create $VM_NAME \
               --project=$PROJECT_ID \
               --zone=$ZONE \
@@ -175,15 +206,11 @@ jobs:
               --image-project=cos-cloud \
               --metadata-from-file startup-script=/tmp/startup-script.sh \
               --metadata IMAGE_URI=$IMAGE_URI \
-              --scopes=https://www.googleapis.com/auth/cloud-platform
+              --scopes=https://www.googleapis.com/auth/cloud-platform \
+              --no-address
             
             # Assign static IP to the VM
             echo "Assigning static IP $STATIC_IP to VM..."
-            gcloud compute instances delete-access-config $VM_NAME \
-              --zone=$ZONE \
-              --project=$PROJECT_ID \
-              --access-config-name="External NAT" 2>/dev/null || true
-            
             gcloud compute instances add-access-config $VM_NAME \
               --zone=$ZONE \
               --project=$PROJECT_ID \
