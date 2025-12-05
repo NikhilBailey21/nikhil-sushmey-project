@@ -43,7 +43,8 @@ class ReportMaker:
 
     def _get_csv_string_from_database(self, csv_id: int) -> str:
         try:
-            cursor = get_db()
+            db = get_db()
+            cursor = db.cursor()
             csv_string = cursor.execute(f"SELECT csv_content FROM uploaded_csvs WHERE csv_id='{csv_id}'")
             cursor.close()
         except Exception as e:
@@ -394,7 +395,22 @@ The amount should be the same as the transaction amount in cents (multiply by 10
         return json.loads(response.text)
 
     def _upload_markdown_report_to_database(self, csv_id: int, markdown_report: str):
-        pass
+        try:
+            db = get_db()
+            cursor = db.cursor()
+            cursor.execute("""
+                INSERT INTO reports (csv_id, report_md)
+                VALUES (%s, %s)
+                RETURNING id
+            """, (csv_id, markdown_report))
+            report_id = cursor.fetchone()[0]
+            logger.info(f"Markdown report uploaded successfully with report id: {report_id}")
+        except Exception as e:
+            logger.error(f"ReportMaker failed to upload report: {e}")
+            if cursor:
+                cursor.close()
+            raise
+
 
 class Category(IntEnum):
     """Transaction categories with their numerical IDs."""
