@@ -106,22 +106,10 @@ jobs:
             exit 1
           fi
           
-          # Build environment variables as comma-separated KEY=VALUE pairs for metadata
+          # Build environment variables as comma-separated KEY=VALUE pairs for metadata (startup script)
           ENV_VARS="RABBITMQ_HOST=${{ secrets.RABBITMQ_HOST }},RABBITMQ_PORT=${{ secrets.RABBITMQ_PORT }},RABBITMQ_USER=${{ secrets.RABBITMQ_USER }},RABBITMQ_PASS=${{ secrets.RABBITMQ_PASS }},RABBITMQ_VHOST=${{ secrets.RABBITMQ_VHOST }}"
           ENV_VARS="$ENV_VARS,CLOUD_SQL_CONNECTION_NAME=${{ secrets.CLOUD_SQL_CONNECTION_NAME }},DB_USER=${{ secrets.DB_USER }},DB_PASS=${{ secrets.DB_PASS }},DB_NAME=${{ secrets.DB_NAME }}"
           ENV_VARS="$ENV_VARS,PROJECT_ID=${{ secrets.GCP_PROJECT_ID }}"
-          
-          # Also build ENV_ARGS in -e format for docker run command (used in startup script)
-          ENV_ARGS="-e RABBITMQ_HOST=${{ secrets.RABBITMQ_HOST }}"
-          ENV_ARGS="$ENV_ARGS -e RABBITMQ_PORT=${{ secrets.RABBITMQ_PORT }}"
-          ENV_ARGS="$ENV_ARGS -e RABBITMQ_USER=${{ secrets.RABBITMQ_USER }}"
-          ENV_ARGS="$ENV_ARGS -e RABBITMQ_PASS=${{ secrets.RABBITMQ_PASS }}"
-          ENV_ARGS="$ENV_ARGS -e RABBITMQ_VHOST=${{ secrets.RABBITMQ_VHOST }}"
-          ENV_ARGS="$ENV_ARGS -e CLOUD_SQL_CONNECTION_NAME=${{ secrets.CLOUD_SQL_CONNECTION_NAME }}"
-          ENV_ARGS="$ENV_ARGS -e DB_USER=${{ secrets.DB_USER }}"
-          ENV_ARGS="$ENV_ARGS -e DB_PASS=${{ secrets.DB_PASS }}"
-          ENV_ARGS="$ENV_ARGS -e DB_NAME=${{ secrets.DB_NAME }}"
-          ENV_ARGS="$ENV_ARGS -e PROJECT_ID=${{ secrets.GCP_PROJECT_ID }}"
           
           # Check if VM exists
           if gcloud compute instances describe $VM_NAME --zone=$ZONE --project=$PROJECT_ID 2>/dev/null; then
@@ -158,7 +146,10 @@ jobs:
               echo 'IFS="," read -ra ENV_ARRAY <<< "$ENV_VARS"'
               echo 'ENV_ARGS=""'
               echo 'for env_pair in "${ENV_ARRAY[@]}"; do'
-              echo '  ENV_ARGS="$ENV_ARGS -e $env_pair"'
+              echo '  env_pair=$(echo "$env_pair" | xargs)'
+              echo '  if [ -n "$env_pair" ]; then'
+              echo '    ENV_ARGS="$ENV_ARGS -e $env_pair"'
+              echo '  fi'
               echo 'done'
               echo ''
               echo '# Run worker container with Cloud Logging driver'
@@ -214,11 +205,6 @@ jobs:
             exit 1
           fi
           
-          # Build environment variables as a single string for metadata
-          ENV_VARS="RABBITMQ_HOST=${{ secrets.RABBITMQ_HOST }},RABBITMQ_PORT=${{ secrets.RABBITMQ_PORT }},RABBITMQ_USER=${{ secrets.RABBITMQ_USER }},RABBITMQ_PASS=${{ secrets.RABBITMQ_PASS }},RABBITMQ_VHOST=${{ secrets.RABBITMQ_VHOST }}"
-          ENV_VARS="$ENV_VARS,CLOUD_SQL_CONNECTION_NAME=${{ secrets.CLOUD_SQL_CONNECTION_NAME }},DB_USER=${{ secrets.DB_USER }},DB_PASS=${{ secrets.DB_PASS }},DB_NAME=${{ secrets.DB_NAME }}"
-          ENV_VARS="$ENV_VARS,PROJECT_ID=${{ secrets.GCP_PROJECT_ID }}"
-          
           echo "Deploying worker container to VM via metadata update..."
           
           # Wait for VM to be ready (if it was just created)
@@ -232,7 +218,7 @@ jobs:
             gcloud compute instances add-metadata $VM_NAME \
               --zone=$ZONE \
               --project=$PROJECT_ID \
-              --metadata IMAGE_URI=$IMAGE_URI,ENV_VARS="$ENV_VARS",GAR_LOCATION=$GAR_LOCATION \
+              --metadata IMAGE_URI=$IMAGE_URI,GAR_LOCATION=$GAR_LOCATION \
               --quiet
             
             # Check if VM has external IP
@@ -264,27 +250,23 @@ jobs:
             if [ -n "$EXTERNAL_IP" ]; then
               echo "Deploying container via SSH using external IP: $EXTERNAL_IP"
               
-              # Deploy via SSH
+              # Deploy via SSH - pass environment variables directly like the server does
               gcloud compute ssh $VM_NAME \
                 --zone=$ZONE \
                 --project=$PROJECT_ID \
                 --command="
-                  # Get image URI and env vars from metadata
+                  # Get image URI from metadata
                   IMAGE_URI=\$(curl -s -H \"Metadata-Flavor: Google\" http://metadata.google.internal/computeMetadata/v1/instance/attributes/IMAGE_URI)
-                  ENV_VARS=\$(curl -s -H \"Metadata-Flavor: Google\" http://metadata.google.internal/computeMetadata/v1/instance/attributes/ENV_VARS)
                   GAR_LOC=\$(curl -s -H \"Metadata-Flavor: Google\" http://metadata.google.internal/computeMetadata/v1/instance/attributes/GAR_LOCATION)
                   
                   # Authenticate Docker using service account token from metadata service
-                  # Get access token for Artifact Registry (parse JSON response)
                   TOKEN_RESPONSE=\$(curl -s -H \"Metadata-Flavor: Google\" \"http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/token?scopes=https://www.googleapis.com/auth/cloud-platform\")
                   ACCESS_TOKEN=\$(echo \"\$TOKEN_RESPONSE\" | grep -o '\"access_token\":\"[^\"]*\"' | cut -d'\"' -f4)
                   
                   if [ -n \"\$ACCESS_TOKEN\" ]; then
-                    # Configure Docker to use the access token
                     echo \"\$ACCESS_TOKEN\" | docker login -u oauth2accesstoken --password-stdin \$GAR_LOC-docker.pkg.dev
                   else
                     echo \"Failed to get access token from metadata service\"
-                    echo \"Token response: \$TOKEN_RESPONSE\"
                     exit 1
                   fi
                   
@@ -295,30 +277,38 @@ jobs:
                   docker stop report-maker 2>/dev/null || true
                   docker rm report-maker 2>/dev/null || true
                   
-                  # Parse environment variables and build docker run command
-                  IFS=\",\" read -ra ENV_ARRAY <<< \"\$ENV_VARS\"
-                  ENV_ARGS=\"\"
-                  for env_pair in \"\${ENV_ARRAY[@]}\"; do
-                    ENV_ARGS=\"\$ENV_ARGS -e \$env_pair\"
-                  done
-                  
                   # Get project ID for Cloud Logging
                   PROJECT_ID=\$(curl -s -H \"Metadata-Flavor: Google\" http://metadata.google.internal/computeMetadata/v1/project/project-id)
                   
-                  # Run worker container with environment variables and Cloud Logging driver
+                  # Run worker container with environment variables directly (like server uses --set-env-vars)
                   docker run -d \\
                     --name report-maker \\
                     --restart unless-stopped \\
                     --log-driver=gcplogs \\
                     --log-opt gcp-project=\$PROJECT_ID \\
                     --log-opt labels=container_name,report-maker \\
-                    \$ENV_ARGS \\
+                    -e RABBITMQ_HOST='${{ secrets.RABBITMQ_HOST }}' \\
+                    -e RABBITMQ_PORT='${{ secrets.RABBITMQ_PORT }}' \\
+                    -e RABBITMQ_USER='${{ secrets.RABBITMQ_USER }}' \\
+                    -e RABBITMQ_PASS='${{ secrets.RABBITMQ_PASS }}' \\
+                    -e RABBITMQ_VHOST='${{ secrets.RABBITMQ_VHOST }}' \\
+                    -e CLOUD_SQL_CONNECTION_NAME='${{ secrets.CLOUD_SQL_CONNECTION_NAME }}' \\
+                    -e DB_USER='${{ secrets.DB_USER }}' \\
+                    -e DB_PASS='${{ secrets.DB_PASS }}' \\
+                    -e DB_NAME='${{ secrets.DB_NAME }}' \\
+                    -e PROJECT_ID='${{ secrets.GCP_PROJECT_ID }}' \\
                     \$IMAGE_URI
                   
                   # Verify container is running
                   sleep 5
                   if docker ps | grep -q report-maker; then
                     echo 'Worker container deployed successfully!'
+                    echo 'Verifying environment variables in container...'
+                    echo \"CLOUD_SQL_CONNECTION_NAME: \$(docker exec report-maker sh -c 'echo \"\${CLOUD_SQL_CONNECTION_NAME:-NOT_SET}\"' 2>&1 || echo 'CONTAINER_NOT_READY')\"
+                    echo \"DB_USER: \$(docker exec report-maker sh -c 'echo \"\${DB_USER:-NOT_SET}\"' 2>&1 || echo 'CONTAINER_NOT_READY')\"
+                    echo \"DB_NAME: \$(docker exec report-maker sh -c 'echo \"\${DB_NAME:-NOT_SET}\"' 2>&1 || echo 'CONTAINER_NOT_READY')\"
+                    echo \"PROJECT_ID: \$(docker exec report-maker sh -c 'echo \"\${PROJECT_ID:-NOT_SET}\"' 2>&1 || echo 'CONTAINER_NOT_READY')\"
+                    echo \"RABBITMQ_HOST: \$(docker exec report-maker sh -c 'echo \"\${RABBITMQ_HOST:-NOT_SET}\"' 2>&1 || echo 'CONTAINER_NOT_READY')\"
                   else
                     echo 'ERROR: Container failed to start'
                     docker logs report-maker 2>&1 || true
