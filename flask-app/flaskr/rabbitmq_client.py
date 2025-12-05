@@ -17,22 +17,40 @@ def get_rabbitmq_connection() -> Optional[pika.BlockingConnection]:
     """
     Create and return a RabbitMQ connection.
     
-    Reads connection parameters from environment variables:
-    - RABBITMQ_HOST: RabbitMQ server host (default: localhost)
-    - RABBITMQ_PORT: RabbitMQ server port (default: 5672)
-    - RABBITMQ_USER: RabbitMQ username (default: admin)
-    - RABBITMQ_PASS: RabbitMQ password (default: admin)
-    - RABBITMQ_VHOST: RabbitMQ virtual host (default: /)
+    Reads connection parameters from environment variables (all required):
+    - RABBITMQ_HOST: RabbitMQ server host
+    - RABBITMQ_PORT: RabbitMQ server port
+    - RABBITMQ_USER: RabbitMQ username
+    - RABBITMQ_PASS: RabbitMQ password
+    - RABBITMQ_VHOST: RabbitMQ virtual host
+    
+    Raises:
+        RuntimeError: If any required environment variables are not set
     
     Returns:
         pika.BlockingConnection or None if connection fails
     """
     try:
-        host = os.environ.get("RABBITMQ_HOST", "localhost")
-        port = int(os.environ.get("RABBITMQ_PORT", "5672"))
-        username = os.environ.get("RABBITMQ_USER", "admin")
-        password = os.environ.get("RABBITMQ_PASS", "admin")
-        vhost = os.environ.get("RABBITMQ_VHOST", "/")
+        # Validate all required environment variables are set
+        required_vars = {
+            "RABBITMQ_HOST": os.environ.get("RABBITMQ_HOST"),
+            "RABBITMQ_PORT": os.environ.get("RABBITMQ_PORT"),
+            "RABBITMQ_USER": os.environ.get("RABBITMQ_USER"),
+            "RABBITMQ_PASS": os.environ.get("RABBITMQ_PASS"),
+            "RABBITMQ_VHOST": os.environ.get("RABBITMQ_VHOST")
+        }
+        
+        missing_vars = [var for var, value in required_vars.items() if not value]
+        if missing_vars:
+            raise RuntimeError(
+                f"RabbitMQ not configured. Missing required environment variables: {', '.join(missing_vars)}"
+            )
+        
+        host = required_vars["RABBITMQ_HOST"]
+        port = int(required_vars["RABBITMQ_PORT"])
+        username = required_vars["RABBITMQ_USER"]
+        password = required_vars["RABBITMQ_PASS"]
+        vhost = required_vars["RABBITMQ_VHOST"]
         
         credentials = pika.PlainCredentials(username, password)
         parameters = pika.ConnectionParameters(

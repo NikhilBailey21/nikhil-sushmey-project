@@ -166,19 +166,58 @@ jobs:
             sleep 5
           done
 
-      # Step 4: Deploy (only runs if build, test, and database init succeed)
+      # Step 4: Setup VPC connector (if configured)
+      - name: Setup VPC connector for Cloud Run
+        id: vpc-connector
+        run: |-
+          VPC_CONNECTOR_NAME="${{ secrets.VPC_CONNECTOR_NAME }}"
+          VPC_NETWORK="${{ secrets.VPC_NETWORK || 'default' }}"
+          VPC_CONNECTOR_REGION="${{ secrets.VPC_CONNECTOR_REGION || env.REGION }}"
+          
+          if [ -n "$VPC_CONNECTOR_NAME" ]; then
+            echo "VPC connector name provided: $VPC_CONNECTOR_NAME"
+            
+            # Check if VPC connector exists
+            if gcloud compute networks vpc-access connectors describe $VPC_CONNECTOR_NAME \
+              --region=$VPC_CONNECTOR_REGION \
+              --project=$PROJECT_ID 2>/dev/null; then
+              echo "VPC connector '$VPC_CONNECTOR_NAME' already exists"
+              echo "vpc_connector=$VPC_CONNECTOR_NAME" >> $GITHUB_OUTPUT
+            else
+              echo "VPC connector '$VPC_CONNECTOR_NAME' not found. Creating..."
+              echo "Note: VPC connector creation requires additional permissions and may take several minutes."
+              echo "You may need to create it manually or ensure the service account has 'roles/vpcaccess.admin' permission."
+              
+              # Try to create the connector (may fail if permissions are insufficient)
+              gcloud compute networks vpc-access connectors create $VPC_CONNECTOR_NAME \
+                --region=$VPC_CONNECTOR_REGION \
+                --network=$VPC_NETWORK \
+                --range=10.8.0.0/28 \
+                --project=$PROJECT_ID 2>&1 || echo "Failed to create VPC connector. Please create it manually or check permissions."
+              
+              echo "vpc_connector=$VPC_CONNECTOR_NAME" >> $GITHUB_OUTPUT
+            fi
+          else
+            echo "No VPC connector configured. Cloud Run will use public internet for connections."
+            echo "vpc_connector=" >> $GITHUB_OUTPUT
+          fi
+
+      # Step 5: Deploy (only runs if build, test, and database init succeed)
       - name: Deploy to Cloud Run
         id: deploy
         run: |-
           # Build environment variables string
           ENV_VARS="CLOUD_SQL_CONNECTION_NAME=${{ secrets.CLOUD_SQL_CONNECTION_NAME }},DB_USER=${{ secrets.DB_USER }},DB_PASS=${{ secrets.DB_PASS }},DB_NAME=${{ secrets.DB_NAME }},GOOGLE_CLIENT_ID=${{ secrets.GOOGLE_CLIENT_ID }},SECRET_KEY=${{ secrets.SECRET_KEY }}"
           
-          # Add RabbitMQ config if secrets are set
-          if [ -n "${{ secrets.RABBITMQ_HOST }}" ]; then
-            ENV_VARS="$ENV_VARS,RABBITMQ_HOST=${{ secrets.RABBITMQ_HOST }},RABBITMQ_PORT=${{ secrets.RABBITMQ_PORT || '5672' }},RABBITMQ_USER=${{ secrets.RABBITMQ_USER || 'admin' }},RABBITMQ_PASS=${{ secrets.RABBITMQ_PASS || 'admin' }},RABBITMQ_VHOST=${{ secrets.RABBITMQ_VHOST || '/' }}"
+          # Add RabbitMQ config - all secrets are required
+          if [ -z "${{ secrets.RABBITMQ_HOST }}" ] || [ -z "${{ secrets.RABBITMQ_PORT }}" ] || [ -z "${{ secrets.RABBITMQ_USER }}" ] || [ -z "${{ secrets.RABBITMQ_PASS }}" ] || [ -z "${{ secrets.RABBITMQ_VHOST }}" ]; then
+            echo "Error: All RabbitMQ secrets must be set: RABBITMQ_HOST, RABBITMQ_PORT, RABBITMQ_USER, RABBITMQ_PASS, RABBITMQ_VHOST"
+            exit 1
           fi
+          ENV_VARS="$ENV_VARS,RABBITMQ_HOST=${{ secrets.RABBITMQ_HOST }},RABBITMQ_PORT=${{ secrets.RABBITMQ_PORT }},RABBITMQ_USER=${{ secrets.RABBITMQ_USER }},RABBITMQ_PASS=${{ secrets.RABBITMQ_PASS }},RABBITMQ_VHOST=${{ secrets.RABBITMQ_VHOST }}"
           
-          gcloud run deploy $SERVICE_NAME \
+          # Build deploy command
+          DEPLOY_CMD="gcloud run deploy $SERVICE_NAME \
             --image $GAR_LOCATION-docker.pkg.dev/$PROJECT_ID/cloud-run-source-deploy/$SERVICE_NAME:$GITHUB_SHA \
             --platform managed \
             --region $REGION \
@@ -189,7 +228,17 @@ jobs:
             --min-instances 0 \
             --max-instances 10 \
             --add-cloudsql-instances ${{ secrets.CLOUD_SQL_CONNECTION_NAME }} \
-            --set-env-vars "$ENV_VARS"
+            --set-env-vars \"$ENV_VARS\""
+          
+          # Add VPC connector if configured
+          if [ -n "${{ steps.vpc-connector.outputs.vpc_connector }}" ]; then
+            VPC_CONNECTOR_REGION="${{ secrets.VPC_CONNECTOR_REGION || env.REGION }}"
+            DEPLOY_CMD="$DEPLOY_CMD --vpc-connector ${{ steps.vpc-connector.outputs.vpc_connector }} --vpc-egress private-ranges-only"
+            echo "Using VPC connector: ${{ steps.vpc-connector.outputs.vpc_connector }}"
+          fi
+          
+          # Execute deploy command
+          eval $DEPLOY_CMD
 
       - name: Show service URL
         run: |-

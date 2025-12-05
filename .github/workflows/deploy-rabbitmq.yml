@@ -71,14 +71,21 @@ jobs:
       # Step 2: Create or update firewall rules for RabbitMQ
       - name: Create firewall rules for RabbitMQ
         run: |-
+          # Validate RabbitMQ port is set
+          if [ -z "${{ secrets.RABBITMQ_PORT }}" ]; then
+            echo "Error: RABBITMQ_PORT secret must be set"
+            exit 1
+          fi
+          RABBITMQ_PORT="${{ secrets.RABBITMQ_PORT }}"
+          
           # Check if firewall rule exists
           if gcloud compute firewall-rules describe rabbitmq-amqp --project=$PROJECT_ID 2>/dev/null; then
             echo "Firewall rule 'rabbitmq-amqp' already exists"
           else
-            echo "Creating firewall rule for AMQP port (5672)..."
+            echo "Creating firewall rule for AMQP port ($RABBITMQ_PORT)..."
             gcloud compute firewall-rules create rabbitmq-amqp \
               --project=$PROJECT_ID \
-              --allow tcp:5672 \
+              --allow tcp:$RABBITMQ_PORT \
               --source-ranges 0.0.0.0/0 \
               --description "Allow RabbitMQ AMQP traffic" \
               --target-tags rabbitmq || echo "Firewall rule may already exist or creation failed"
@@ -93,6 +100,19 @@ jobs:
               --allow tcp:15672 \
               --source-ranges 0.0.0.0/0 \
               --description "Allow RabbitMQ Management UI traffic" \
+              --target-tags rabbitmq || echo "Firewall rule may already exist or creation failed"
+          fi
+          
+          # Create internal-only firewall rule for VPC communication
+          if gcloud compute firewall-rules describe rabbitmq-amqp-internal --project=$PROJECT_ID 2>/dev/null; then
+            echo "Firewall rule 'rabbitmq-amqp-internal' already exists"
+          else
+            echo "Creating internal-only firewall rule for AMQP port ($RABBITMQ_PORT)..."
+            gcloud compute firewall-rules create rabbitmq-amqp-internal \
+              --project=$PROJECT_ID \
+              --allow tcp:$RABBITMQ_PORT \
+              --source-ranges 10.0.0.0/8,172.16.0.0/12,192.168.0.0/16 \
+              --description "Allow internal VPC traffic to RabbitMQ AMQP port" \
               --target-tags rabbitmq || echo "Firewall rule may already exist or creation failed"
           fi
 
