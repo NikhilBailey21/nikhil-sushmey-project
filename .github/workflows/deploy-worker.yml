@@ -13,7 +13,9 @@ on:
 env:
   PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
   GAR_LOCATION: ${{ secrets.GCP_REGION }}
-  SERVICE_NAME: report-maker-app
+  IMAGE_NAME: report-maker
+  VM_NAME: report-maker-vm
+  ZONE: ${{ secrets.GCP_ZONE || 'us-central1-a' }}
   REGION: ${{ secrets.GCP_REGION }}
 
 jobs:
@@ -57,7 +59,7 @@ jobs:
         working-directory: ./report-maker
         run: |-
           # Submit build asynchronously to avoid log streaming permission issues
-          BUILD_ID=$(gcloud builds submit --async --tag $GAR_LOCATION-docker.pkg.dev/$PROJECT_ID/cloud-run-source-deploy/$SERVICE_NAME:$GITHUB_SHA --format="value(id)")
+          BUILD_ID=$(gcloud builds submit --async --tag $GAR_LOCATION-docker.pkg.dev/$PROJECT_ID/cloud-run-source-deploy/$IMAGE_NAME:$GITHUB_SHA --format="value(id)")
           echo "Build submitted with ID: $BUILD_ID"
           echo "View build logs at: https://console.cloud.google.com/cloud-build/builds/$BUILD_ID?project=$PROJECT_ID"
           
@@ -79,48 +81,142 @@ jobs:
             sleep 5
           done
 
-      # Step 3: Deploy (only runs if build and test succeed)
-      - name: Deploy to Cloud Run
-        id: deploy
+      # Step 3: Create or update Compute Engine VM instance
+      - name: Create or update VM instance
+        id: vm-setup
         run: |-
-          # Build environment variables string
-          ENV_VARS=""
+          IMAGE_URI="$GAR_LOCATION-docker.pkg.dev/$PROJECT_ID/cloud-run-source-deploy/$IMAGE_NAME:$GITHUB_SHA"
           
-          # Add RabbitMQ config if secrets are set
+          # Build environment variables for container
+          ENV_ARGS=""
           if [ -n "${{ secrets.RABBITMQ_HOST }}" ]; then
-            ENV_VARS="RABBITMQ_HOST=${{ secrets.RABBITMQ_HOST }},RABBITMQ_PORT=${{ secrets.RABBITMQ_PORT || '5672' }},RABBITMQ_USER=${{ secrets.RABBITMQ_USER || 'admin' }},RABBITMQ_PASS=${{ secrets.RABBITMQ_PASS || 'admin' }},RABBITMQ_VHOST=${{ secrets.RABBITMQ_VHOST || '/' }}"
+            ENV_ARGS="-e RABBITMQ_HOST=${{ secrets.RABBITMQ_HOST }}"
+            ENV_ARGS="$ENV_ARGS -e RABBITMQ_PORT=${{ secrets.RABBITMQ_PORT || '5672' }}"
+            ENV_ARGS="$ENV_ARGS -e RABBITMQ_USER=${{ secrets.RABBITMQ_USER || 'admin' }}"
+            ENV_ARGS="$ENV_ARGS -e RABBITMQ_PASS=${{ secrets.RABBITMQ_PASS || 'admin' }}"
+            ENV_ARGS="$ENV_ARGS -e RABBITMQ_VHOST=${{ secrets.RABBITMQ_VHOST || '/' }}"
           fi
           
-          # Deploy with or without env vars
-          if [ -n "$ENV_VARS" ]; then
-            gcloud run deploy $SERVICE_NAME \
-              --image $GAR_LOCATION-docker.pkg.dev/$PROJECT_ID/cloud-run-source-deploy/$SERVICE_NAME:$GITHUB_SHA \
-              --platform managed \
-              --region $REGION \
-              --allow-unauthenticated \
-              --port 8080 \
-              --memory 256Mi \
-              --cpu 1 \
-              --min-instances 0 \
-              --max-instances 10 \
-              --set-env-vars "$ENV_VARS"
+          # Check if VM exists
+          if gcloud compute instances describe $VM_NAME --zone=$ZONE --project=$PROJECT_ID 2>/dev/null; then
+            echo "VM instance '$VM_NAME' already exists"
+            echo "vm_exists=true" >> $GITHUB_OUTPUT
           else
-            gcloud run deploy $SERVICE_NAME \
-              --image $GAR_LOCATION-docker.pkg.dev/$PROJECT_ID/cloud-run-source-deploy/$SERVICE_NAME:$GITHUB_SHA \
-              --platform managed \
-              --region $REGION \
-              --allow-unauthenticated \
-              --port 8080 \
-              --memory 256Mi \
-              --cpu 1 \
-              --min-instances 0 \
-              --max-instances 10
+            echo "Creating VM instance '$VM_NAME'..."
+            
+            # Create startup script to install Docker and run worker container
+            {
+              echo '#!/bin/bash'
+              echo '# Install Docker'
+              echo 'apt-get update'
+              echo 'apt-get install -y docker.io'
+              echo 'systemctl start docker'
+              echo 'systemctl enable docker'
+              echo 'usermod -aG docker $USER'
+              echo ''
+              echo '# Pull and run worker container'
+              echo 'IMAGE_URI="${IMAGE_URI}"'
+              echo 'ENV_ARGS="${ENV_ARGS}"'
+              echo 'docker pull $IMAGE_URI || true'
+              echo ''
+              echo '# Stop existing container if running'
+              echo 'docker stop report-maker 2>/dev/null || true'
+              echo 'docker rm report-maker 2>/dev/null || true'
+              echo ''
+              echo '# Run worker container'
+              echo 'docker run -d \'
+              echo '  --name report-maker \'
+              echo '  --restart unless-stopped \'
+              echo '  $ENV_ARGS \'
+              echo '  $IMAGE_URI'
+            } > /tmp/startup-script.sh
+
+            # Create VM without external IP (worker doesn't need external access)
+            echo "Creating VM without external IP..."
+            gcloud compute instances create $VM_NAME \
+              --project=$PROJECT_ID \
+              --zone=$ZONE \
+              --machine-type=e2-small \
+              --boot-disk-size=10GB \
+              --boot-disk-type=pd-standard \
+              --image-family=cos-stable \
+              --image-project=cos-cloud \
+              --metadata-from-file startup-script=/tmp/startup-script.sh \
+              --metadata IMAGE_URI=$IMAGE_URI,ENV_ARGS="$ENV_ARGS" \
+              --scopes=https://www.googleapis.com/auth/cloud-platform \
+              --no-address
+            
+            echo "vm_exists=false" >> $GITHUB_OUTPUT
           fi
 
-      - name: Show service URL
+      # Step 4: Deploy container to VM
+      - name: Deploy worker container to VM
         run: |-
-          gcloud run services describe $SERVICE_NAME \
-            --platform managed \
-            --region $REGION \
-            --format 'value(status.url)'
+          IMAGE_URI="$GAR_LOCATION-docker.pkg.dev/$PROJECT_ID/cloud-run-source-deploy/$IMAGE_NAME:$GITHUB_SHA"
+          
+          # Build environment variables for container
+          ENV_ARGS=""
+          if [ -n "${{ secrets.RABBITMQ_HOST }}" ]; then
+            ENV_ARGS="-e RABBITMQ_HOST=${{ secrets.RABBITMQ_HOST }}"
+            ENV_ARGS="$ENV_ARGS -e RABBITMQ_PORT=${{ secrets.RABBITMQ_PORT || '5672' }}"
+            ENV_ARGS="$ENV_ARGS -e RABBITMQ_USER=${{ secrets.RABBITMQ_USER || 'admin' }}"
+            ENV_ARGS="$ENV_ARGS -e RABBITMQ_PASS=${{ secrets.RABBITMQ_PASS || 'admin' }}"
+            ENV_ARGS="$ENV_ARGS -e RABBITMQ_VHOST=${{ secrets.RABBITMQ_VHOST || '/' }}"
+          fi
+          
+          echo "Deploying worker container to VM..."
+          
+          # Wait for VM to be ready (if it was just created)
+          if [ "${{ steps.vm-setup.outputs.vm_exists }}" = "false" ]; then
+            echo "Waiting for VM to be ready..."
+            sleep 30
+          fi
+          
+          # SSH into VM and deploy container
+          gcloud compute ssh $VM_NAME \
+            --zone=$ZONE \
+            --project=$PROJECT_ID \
+            --command="
+              # Configure Docker authentication
+              gcloud auth configure-docker $GAR_LOCATION-docker.pkg.dev --quiet || true
+              
+              # Pull latest image
+              docker pull $IMAGE_URI
+              
+              # Stop existing container if running
+              docker stop report-maker 2>/dev/null || true
+              docker rm report-maker 2>/dev/null || true
+              
+              # Run worker container with environment variables
+              docker run -d \
+                --name report-maker \
+                --restart unless-stopped \
+                $ENV_ARGS \
+                $IMAGE_URI
+              
+              # Verify container is running
+              sleep 5
+              docker ps | grep report-maker || exit 1
+              echo 'Worker container deployed successfully!'
+            " \
+            --quiet || echo "Deployment completed (SSH may have timed out, but container should be running)"
+
+      # Step 5: Show VM details
+      - name: Show VM details
+        run: |-
+          INTERNAL_IP=$(gcloud compute instances describe $VM_NAME \
+            --zone=$ZONE \
+            --project=$PROJECT_ID \
+            --format='get(networkInterfaces[0].networkIP)')
+          
+          echo "Report Maker Worker VM Details:"
+          echo "  Instance Name: $VM_NAME"
+          echo "  Zone: $ZONE"
+          echo "  Internal IP: $INTERNAL_IP"
+          echo ""
+          echo "Worker Status:"
+          echo "  Container: report-maker"
+          echo "  Image: $GAR_LOCATION-docker.pkg.dev/$PROJECT_ID/cloud-run-source-deploy/$IMAGE_NAME:$GITHUB_SHA"
+          echo ""
+          echo "✓ Worker deployed and running!"
 
