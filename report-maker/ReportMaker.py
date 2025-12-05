@@ -9,7 +9,7 @@ from typing import List, Dict
 import vertexai
 from typing import List, Dict
 from shared.db import get_db
-from vertexai.generative_models import GenerativeModel
+from vertexai.generative_models import GenerativeModel, GenerationConfig
 
 logger = logging.getLogger(__name__)
 
@@ -85,14 +85,31 @@ The amount should be the same as the transaction amount in cents (multiply by 10
 \n\nTransaction data:\n\n{transaction_data}
 """
 
-        response = self.model.generate_content(vertexai_prompt,
-            generation_config={
-                "response_schema": schema,
-                "response_mime_type": "application/json"
-            }
+        # Use GenerationConfig class with response_schema
+        # The schema dict should be passed directly - VertexAI SDK will handle it
+        generation_config = GenerationConfig(
+            response_mime_type="application/json",
+            response_schema=schema
+        )
+        
+        response = self.model.generate_content(
+            vertexai_prompt,
+            generation_config=generation_config
         )
 
-        return json.loads(response.text)
+        # Extract JSON from response (might have markdown code blocks)
+        response_text = response.text.strip()
+        
+        # Remove markdown code blocks if present
+        if response_text.startswith("```"):
+            lines = response_text.split("\n")
+            if lines[0].startswith("```"):
+                lines = lines[1:]
+            if lines[-1].strip() == "```":
+                lines = lines[:-1]
+            response_text = "\n".join(lines)
+        
+        return json.loads(response_text)
 
     def _validate_structured_json(self, structured_json: list) -> bool:
         """
