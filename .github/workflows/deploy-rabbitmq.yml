@@ -103,18 +103,37 @@ jobs:
               --target-tags rabbitmq || echo "Firewall rule may already exist or creation failed"
           fi
           
-          # Create internal-only firewall rule for VPC communication
+          # Create or update internal-only firewall rule for VPC communication
+          # This allows Cloud Run (via VPC connector) and other VPC resources to connect
           if gcloud compute firewall-rules describe rabbitmq-amqp-internal --project=$PROJECT_ID 2>/dev/null; then
-            echo "Firewall rule 'rabbitmq-amqp-internal' already exists"
-          else
-            echo "Creating internal-only firewall rule for AMQP port ($RABBITMQ_PORT)..."
-            gcloud compute firewall-rules create rabbitmq-amqp-internal \
+            echo "Updating existing internal firewall rule 'rabbitmq-amqp-internal'..."
+            # Delete and recreate to ensure it has the correct configuration
+            gcloud compute firewall-rules delete rabbitmq-amqp-internal \
               --project=$PROJECT_ID \
-              --allow tcp:$RABBITMQ_PORT \
-              --source-ranges 10.0.0.0/8,172.16.0.0/12,192.168.0.0/16 \
-              --description "Allow internal VPC traffic to RabbitMQ AMQP port" \
-              --target-tags rabbitmq || echo "Firewall rule may already exist or creation failed"
+              --quiet 2>/dev/null || true
           fi
+          
+          echo "Creating internal-only firewall rule for AMQP port ($RABBITMQ_PORT)..."
+          # Allow traffic from all private IP ranges (covers VPC connector subnets)
+          # This includes: 10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16
+          # Note: VPC connector typically uses 10.8.0.0/28, which is covered by 10.0.0.0/8
+          # This rule allows Cloud Run (via VPC connector) and other VPC resources to connect
+          gcloud compute firewall-rules create rabbitmq-amqp-internal \
+            --project=$PROJECT_ID \
+            --allow tcp:$RABBITMQ_PORT \
+            --source-ranges 10.0.0.0/8,172.16.0.0/12,192.168.0.0/16 \
+            --description "Allow internal VPC traffic to RabbitMQ AMQP port (includes VPC connector traffic)" \
+            --target-tags rabbitmq \
+            --direction INGRESS || {
+            echo "Warning: Failed to create/update internal firewall rule"
+            echo "You may need to create it manually or check permissions"
+          }
+          
+          echo "✓ Internal firewall rule created/updated"
+          echo "  This rule allows traffic from:"
+          echo "    - VPC connector subnets (typically 10.8.0.0/28)"
+          echo "    - All private IP ranges (10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16)"
+          echo "    - Other VPC resources"
 
       # Step 3: Reserve static IP if it doesn't exist
       - name: Reserve static IP for RabbitMQ VM
@@ -151,6 +170,20 @@ jobs:
           # Check if VM exists
           if gcloud compute instances describe $VM_NAME --zone=$ZONE --project=$PROJECT_ID 2>/dev/null; then
             echo "VM instance '$VM_NAME' already exists"
+            
+            # Ensure VM has the rabbitmq network tag (required for firewall rules)
+            VM_TAGS=$(gcloud compute instances describe $VM_NAME \
+              --zone=$ZONE \
+              --project=$PROJECT_ID \
+              --format='get(tags.items)' 2>/dev/null | tr ';' ' ' || echo "")
+            
+            if ! echo "$VM_TAGS" | grep -q "rabbitmq"; then
+              echo "Adding 'rabbitmq' network tag to existing VM (required for firewall rules)..."
+              gcloud compute instances add-tags $VM_NAME \
+                --zone=$ZONE \
+                --project=$PROJECT_ID \
+                --tags=rabbitmq || echo "Warning: Failed to add network tag"
+            fi
             
             # Check if VM has the static IP assigned
             CURRENT_IP=$(gcloud compute instances describe $VM_NAME \
@@ -393,6 +426,49 @@ jobs:
             " \
             --quiet
 
+      # Step 5.5: Verify firewall and network configuration
+      - name: Verify firewall and network configuration
+        run: |-
+          echo "Verifying firewall rules and VM network configuration..."
+          
+          # Check if VM has the rabbitmq tag
+          VM_TAGS=$(gcloud compute instances describe $VM_NAME \
+            --zone=$ZONE \
+            --project=$PROJECT_ID \
+            --format='get(tags.items)' 2>/dev/null | tr ';' ' ' || echo "")
+          
+          if echo "$VM_TAGS" | grep -q "rabbitmq"; then
+            echo "✓ VM has 'rabbitmq' network tag"
+          else
+            echo "⚠️  WARNING: VM does not have 'rabbitmq' network tag"
+            echo "  Firewall rules target this tag, so they may not apply to this VM"
+            echo "  Adding 'rabbitmq' tag to VM..."
+            gcloud compute instances add-tags $VM_NAME \
+              --zone=$ZONE \
+              --project=$PROJECT_ID \
+              --tags=rabbitmq || echo "Failed to add tag (may need manual intervention)"
+          fi
+          
+          # Verify firewall rules exist and are configured correctly
+          echo ""
+          echo "Checking firewall rules..."
+          
+          if gcloud compute firewall-rules describe rabbitmq-amqp-internal --project=$PROJECT_ID 2>/dev/null; then
+            echo "✓ Internal firewall rule 'rabbitmq-amqp-internal' exists"
+            RULE_SOURCES=$(gcloud compute firewall-rules describe rabbitmq-amqp-internal \
+              --project=$PROJECT_ID \
+              --format='get(sourceRanges)' 2>/dev/null || echo "")
+            echo "  Source ranges: $RULE_SOURCES"
+          else
+            echo "✗ Internal firewall rule 'rabbitmq-amqp-internal' does not exist"
+          fi
+          
+          if gcloud compute firewall-rules describe rabbitmq-amqp --project=$PROJECT_ID 2>/dev/null; then
+            echo "✓ External firewall rule 'rabbitmq-amqp' exists"
+          else
+            echo "✗ External firewall rule 'rabbitmq-amqp' does not exist"
+          fi
+
       # Step 6: Get VM details and output configuration
       - name: Show VM details and RabbitMQ configuration
         run: |-
@@ -400,23 +476,49 @@ jobs:
           RABBITMQ_USER="${{ secrets.RABBITMQ_USER || 'admin' }}"
           RABBITMQ_PASS="${{ secrets.RABBITMQ_PASS || 'admin' }}"
           
+          # Get internal IP
+          INTERNAL_IP=$(gcloud compute instances describe $VM_NAME \
+            --zone=$ZONE \
+            --project=$PROJECT_ID \
+            --format='get(networkInterfaces[0].networkIP)' 2>/dev/null || echo "unknown")
+          
+          # Get network tags
+          VM_TAGS=$(gcloud compute instances describe $VM_NAME \
+            --zone=$ZONE \
+            --project=$PROJECT_ID \
+            --format='get(tags.items)' 2>/dev/null | tr ';' ',' || echo "unknown")
+          
           echo "RabbitMQ VM Details:"
           echo "  Instance Name: $VM_NAME"
           echo "  Zone: $ZONE"
-          echo "  Static IP: $RABBITMQ_IP"
+          echo "  External IP (Static): $RABBITMQ_IP"
+          echo "  Internal IP: $INTERNAL_IP"
+          echo "  Network Tags: $VM_TAGS"
           echo ""
           echo "RabbitMQ Access:"
-          echo "  AMQP Port: $RABBITMQ_IP:5672"
+          echo "  External AMQP: $RABBITMQ_IP:5672"
+          echo "  Internal AMQP: $INTERNAL_IP:5672 (for VPC/Cloud Run)"
           echo "  Management UI: http://$RABBITMQ_IP:15672"
           echo "  Username: $RABBITMQ_USER"
           echo "  Password: [configured in secrets]"
           echo ""
+          echo "Firewall Rules:"
+          echo "  - rabbitmq-amqp: Allows external traffic (0.0.0.0/0)"
+          echo "  - rabbitmq-amqp-internal: Allows VPC traffic (10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16)"
+          echo ""
           echo "Environment Variables for Cloud Run Services:"
-          echo "  RABBITMQ_HOST=$RABBITMQ_IP"
+          echo "  For external access (no VPC connector):"
+          echo "    RABBITMQ_HOST=$RABBITMQ_IP"
+          echo "  For internal VPC access (with VPC connector):"
+          echo "    RABBITMQ_HOST=$INTERNAL_IP"
           echo "  RABBITMQ_PORT=5672"
           echo "  RABBITMQ_USER=$RABBITMQ_USER"
           echo "  RABBITMQ_PASS=[from secrets]"
           echo "  RABBITMQ_VHOST=/"
           echo ""
-          echo "⚠️  Note: Update Cloud Run services with these environment variables!"
+          echo "⚠️  Important:"
+          echo "  - If Cloud Run uses VPC connector with --vpc-egress private-ranges-only,"
+          echo "    use the INTERNAL IP ($INTERNAL_IP) for RABBITMQ_HOST"
+          echo "  - If Cloud Run connects via public internet, use the EXTERNAL IP ($RABBITMQ_IP)"
+          echo "  - Ensure firewall rules allow traffic from your VPC connector's subnet"
 
