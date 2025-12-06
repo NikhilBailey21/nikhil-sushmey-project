@@ -186,7 +186,7 @@ class ReportMaker:
             response_mime_type="application/json",
         )
         response = self.models.generate_content(
-                contents=[transaction_data, prompt]
+                contents=[transaction_data, vertexai_prompt]
             )
         logger.info("Vertex AI request completed")
 
