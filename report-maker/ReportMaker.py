@@ -436,13 +436,13 @@ class ReportMaker:
                 "avgTransaction": avg_txn/100.0,
             },
             "categories": {
-                "totals": category_totals/100.0,
+                "totals": {cat: total/100.0 for cat, total in category_totals.items()},
                 "percentages": category_percentages,
                 "counts": category_counts,
             },
             "timeSeries": {
-                "monthTotals": month_totals/100.0,
-                "monthGrowth": mom_growth/100.0,
+                "monthTotals": {month: total/100.0 for month, total in month_totals.items()},
+                "monthGrowth": {month: (growth/100.0 if growth is not None else None) for month, growth in mom_growth.items()},
             },
             "advanced": {
                 "concentrationIndex": hhi,
