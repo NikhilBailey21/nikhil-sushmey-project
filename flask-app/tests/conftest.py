@@ -41,11 +41,25 @@ def app():
     
     app = create_app({"TESTING": True})
 
-    # Load test data into existing database tables
+    # Clean up existing test data and load fresh test data
     with app.app_context():
         db = get_db()
         cursor = db.cursor()
-        # Execute each statement from data.sql
+        
+        # First, delete any existing test data (reports first due to foreign key constraint)
+        # Delete reports for test users
+        cursor.execute('''
+            DELETE FROM "reports" 
+            WHERE userid IN (
+                SELECT id FROM "users" 
+                WHERE username IN ('test', 'other')
+            )
+        ''')
+        
+        # Delete test users
+        cursor.execute('DELETE FROM "users" WHERE username IN (\'test\', \'other\')')
+        
+        # Now load fresh test data
         statements = [s.strip() for s in _data_sql.split(';') if s.strip() and not s.strip().startswith('--')]
         for statement in statements:
             if statement:
@@ -55,11 +69,23 @@ def app():
 
     yield app
 
-    # Clean up test data after tests
+    # Clean up test data after tests (reports first due to foreign key constraint)
     with app.app_context():
         db = get_db()
         cursor = db.cursor()
-        cursor.execute('DELETE FROM "users"')
+        
+        # Delete reports for test users first
+        cursor.execute('''
+            DELETE FROM "reports" 
+            WHERE userid IN (
+                SELECT id FROM "users" 
+                WHERE username IN ('test', 'other')
+            )
+        ''')
+        
+        # Then delete test users
+        cursor.execute('DELETE FROM "users" WHERE username IN (\'test\', \'other\')')
+        
         db.commit()
         cursor.close()
 
