@@ -431,18 +431,18 @@ class ReportMaker:
         # ----------------------
         metrics = {
             "summary": {
-                "totalSpend": total_spend,
+                "totalSpend": total_spend/100.0,
                 "transactionCount": count,
-                "avgTransaction": avg_txn,
+                "avgTransaction": avg_txn/100.0,
             },
             "categories": {
-                "totals": category_totals,
+                "totals": category_totals/100.0,
                 "percentages": category_percentages,
                 "counts": category_counts,
             },
             "timeSeries": {
-                "monthTotals": month_totals,
-                "monthGrowth": mom_growth,
+                "monthTotals": month_totals/100.0,
+                "monthGrowth": mom_growth/100.0,
             },
             "advanced": {
                 "concentrationIndex": hhi,
@@ -502,7 +502,7 @@ class ReportMaker:
         # Convert Transaction objects to dictionaries for JSON serialization
         transactions_dict = [
             {
-                "amountInCents": t.amountInCents,
+                "amount_dollars": t.amountInCents/100.0,
                 "description": t.description,
                 "category": t.category,
                 "date": t.date.strftime("%Y-%m-%d")  # Convert datetime to ISO format string
@@ -553,9 +553,10 @@ class ReportMaker:
             logger.info(f"Markdown report uploaded successfully with report id: {report_id}")
         except Exception as e:
             logger.error(f"ReportMaker failed to upload report: {e}")
+            raise
+        finally:
             if cursor:
                 cursor.close()
-            raise
 
 
 class Category(IntEnum):
