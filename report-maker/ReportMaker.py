@@ -24,19 +24,21 @@ class ReportMaker:
     def __init__(self):
         project_id = os.getenv("PROJECT_ID")
         location = "us-central1"
+        
+        model_name = "gemini-2.5-flash-lite"
         try:
             vertexai.init(project=project_id, location=location)
-            self.model = GenerativeModel("gemini-2.5-pro")
+            self.model = GenerativeModel(model_name)
         except (google_exceptions.NotFound, google_exceptions.PermissionDenied) as e:
             error_msg = str(e)
             if "was not found" in error_msg or "does not have access" in error_msg:
                 logger.error(
                     f"VertexAI model not found or access denied. "
-                    f"Model: gemini-2.5-pro, Project: {project_id}, Location: {location}. "
+                    f"Model: {model_name}, Project: {project_id}, Location: {location}. "
                     f"Error: {error_msg}"
                 )
                 raise RuntimeError(
-                    f"VertexAI model 'gemini-2.5-pro' is not available in project '{project_id}' "
+                    f"VertexAI model '{model_name}' is not available in project '{project_id}' "
                     f"at location '{location}'. Please verify the model name and project permissions. "
                     f"Original error: {error_msg}"
                 ) from e
