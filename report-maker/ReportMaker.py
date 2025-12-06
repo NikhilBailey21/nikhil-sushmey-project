@@ -518,8 +518,19 @@ class ReportMaker:
 
         """
 
+        # Convert Transaction objects to dictionaries for JSON serialization
+        transactions_dict = [
+            {
+                "amountInCents": t.amountInCents,
+                "description": t.description,
+                "category": t.category,
+                "date": t.date.strftime("%Y-%m-%d")  # Convert datetime to ISO format string
+            }
+            for t in transaction_list
+        ]
+        
         report_input = {
-            "transactions": transaction_list,
+            "transactions": transactions_dict,
             "metrics": metrics,
         }
 
