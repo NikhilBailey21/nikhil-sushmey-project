@@ -195,11 +195,12 @@ class ReportMaker:
         raw_response_text = response_text  # Store original for logging
         logger.info(f"This is AI slop {response_text}")
         # Remove markdown code blocks if present
-        if response_text.startswith("```json"):
+        if response_text.startswith("```"):
             lines = response_text.split("\n")
             if lines[0].startswith("```"):
                 lines = lines[1:]
-            if lines[-1].strip() == "```":
+            # Remove last line if it's a closing code block marker
+            if lines and lines[-1].strip() == "```":
                 lines = lines[:-1]
             response_text = "\n".join(lines)
         
