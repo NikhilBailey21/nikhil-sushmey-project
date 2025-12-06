@@ -537,7 +537,18 @@ class ReportMaker:
             }
         ])
 
-        return json.loads(response.text)
+        # Extract markdown from response (might have markdown code blocks)
+        response_text = response.text.strip()
+        # Remove markdown code blocks if present
+        if response_text.startswith("```"):
+            lines = response_text.split("\n")
+            if lines[0].startswith("```"):
+                lines = lines[1:]
+            if lines[-1].strip() == "```":
+                lines = lines[:-1]
+            response_text = "\n".join(lines)
+        
+        return response_text
 
     def _upload_markdown_report_to_database(self, markdown_report: str, user_id: int):
         try:
