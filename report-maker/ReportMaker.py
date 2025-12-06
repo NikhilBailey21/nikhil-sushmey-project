@@ -488,7 +488,7 @@ class ReportMaker:
         # complete_prompt = f"{vertexai_prompt}Transaction Data and Metrics:\n{}"
 
         logger.info("Calling the model to generate the report")
-        response = self.model.generate_content(contents=[transactions_dict, metrics, vertexai_prompt])
+        response = self.model.generate_content(contents=[vertexai_prompt, f"\n\nTransaction Data and Metrics:\n{data_json}"])
 
         # Extract markdown from response (might have markdown code blocks)
         response_text = response.text.strip()
