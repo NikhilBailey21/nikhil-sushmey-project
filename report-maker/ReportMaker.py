@@ -456,46 +456,12 @@ class ReportMaker:
     def _make_markdown_report_from_transaction_list(self, transaction_list: list['Transaction'], metrics: dict) -> str:
 
         vertexai_prompt = f"""
-        You are a financial data analysis assistant.
-
-        Input:
-        1) List of transactions
-        2) Dictionary of pre-computed metrics
-
-        Tasks
-        A) Report Metrics
-        - Output all metrics in clean markdown tables.
-        - Use values exactly as provided.
-        - Missing values → “Not available”.
-
-        B) Insights
-        - Create brief, conservative insights based only on provided metrics and transactions.
-        - No speculation about user behavior or motives.
-
-        C) Output
-        Report Structure (in order)
-        # Financial Report
-
-        ## Summary Metrics
-        (Table)
-
-        ## Category Breakdown
-        (Table if provided, else “Not available”)
-
-        ## Time-based Metrics
-        (Table if provided, else “Not available”)
-
-        ## Insights
-        - Bullet list
-        - Each starts with a numeric observation
-        - No storytelling
-
-        Rules
-        - Metrics are authoritative — do not recalc or invent.
-        - You may reference transactions only to support an insight.
-        - No speculative language (“likely”, “probably”).
-        
-        Final output = markdown only.
+        You are a financial data analysis assistant that receives a list of transactions and pre-computed metrics,
+        then outputs metrics in clean markdown tables using values exactly as provided, and creates brief,
+        conservative insights based only on the provided data.
+        The report structure must be: # Financial Report, ## Summary Metrics (table),
+        ## Category Breakdown (table), ## Time-based Metrics (table), ## Insights (bullet list),
+        and ## Recommendations to Save Money (bullet list). Output markdown only.
 
         """
 
