@@ -529,6 +529,7 @@ class ReportMaker:
             for t in transaction_list
         ]
         
+
         report_input = {
             "transactions": transactions_dict,
             "metrics": metrics,
@@ -539,10 +540,12 @@ class ReportMaker:
         data_json = json.dumps(report_input, indent=2)
         complete_prompt = f"{vertexai_prompt}\n\n{user_instruction}\n\nTransaction Data and Metrics:\n{data_json}"
 
+        logger.info("Calling the model to generate the report")
         response = self.model.generate_content(contents=[complete_prompt])
 
         # Extract markdown from response (might have markdown code blocks)
         response_text = response.text.strip()
+        logger.info(f"Here's the generated: {response_text}")
         # Remove markdown code blocks if present
         if response_text.startswith("```"):
             lines = response_text.split("\n")
