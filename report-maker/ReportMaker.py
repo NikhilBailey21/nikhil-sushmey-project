@@ -560,10 +560,10 @@ class ReportMaker:
             db = get_db()
             cursor = db.cursor()
             cursor.execute("""
-                INSERT INTO reports (report_md, userid)
-                VALUES (%s, %s)
+                INSERT INTO reports (report, name, userid)
+                VALUES (%s, %s, %s)
                 RETURNING id
-            """, (markdown_report, user_id))
+            """, (markdown_report, "Report " + datetime.now().strftime("%Y-%m-%d %H:%M:%S"), user_id))
             report_id = cursor.fetchone()[0]
             logger.info(f"Markdown report uploaded successfully with report id: {report_id}")
         except Exception as e:
