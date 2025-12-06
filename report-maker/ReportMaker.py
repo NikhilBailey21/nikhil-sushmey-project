@@ -534,20 +534,12 @@ class ReportMaker:
             "metrics": metrics,
         }
 
-        response = self.model.generate_content([
-            {
-                "role": "system",
-                "content": vertexai_prompt
-            },
-            {
-                "role": "user",
-                "content": "Generate the financial report using the provided transaction data and metrics."
-            },
-            {
-                "role": "model_input",
-                "content": json.dumps(report_input)
-            }
-        ])
+        # Format the complete prompt with instructions and data
+        user_instruction = "Generate the financial report using the provided transaction data and metrics."
+        data_json = json.dumps(report_input, indent=2)
+        complete_prompt = f"{vertexai_prompt}\n\n{user_instruction}\n\nTransaction Data and Metrics:\n{data_json}"
+
+        response = self.model.generate_content(contents=[complete_prompt])
 
         # Extract markdown from response (might have markdown code blocks)
         response_text = response.text.strip()
