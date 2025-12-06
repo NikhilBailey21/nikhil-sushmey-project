@@ -26,7 +26,7 @@ class ReportMaker:
         location = "us-central1"
         try:
             vertexai.init(project=project_id, location=location)
-            self.model = GenerativeModel("gemini-2.5-flash")
+            self.model = GenerativeModel("gemini-2.5-pro")
         except (google_exceptions.NotFound, google_exceptions.PermissionDenied) as e:
             error_msg = str(e)
             if "was not found" in error_msg or "does not have access" in error_msg:
