@@ -548,7 +548,7 @@ class ReportMaker:
                 VALUES (%s, %s, %s)
                 RETURNING id
             """, (markdown_report, "Report " + datetime.now().strftime("%Y-%m-%d %H:%M:%S"), user_id))
-            cursor.commit()
+            db.commit()
             report_id = cursor.fetchone()[0]
             logger.info(f"Markdown report uploaded successfully with report id: {report_id}")
         except Exception as e:
