@@ -175,6 +175,12 @@ class ReportMaker:
                 \n\nTransaction data:\n\n{transaction_data}
         """
         logger.info(f"this is the prompt {vertexai_prompt}")
+
+        logger.info(f"Model object: {self.model}")
+        logger.info(f"Type: {type(self.model)}")
+
+        hello = self.model.generate_content("hi")
+        logger.info(f"Model is rude: {hello}")
         # Use GenerationConfig class with response_schema
         # The schema dict should be passed directly - VertexAI SDK will handle it
         generation_config = GenerationConfig(
@@ -183,8 +189,8 @@ class ReportMaker:
         
         response = self.model.generate_content(
             vertexai_prompt,
-            generation_config=generation_config
         )
+        logger.info("Vertex AI request completed")
 
         # Extract JSON from response (might have markdown code blocks)
         response_text = response.text.strip()
