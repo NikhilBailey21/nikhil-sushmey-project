@@ -172,7 +172,6 @@ class ReportMaker:
                 {json.dumps(VALID_CATEGORIES)}
                 Strictly follow this schema: {schema} else it will fail.
                 The amount should be the same as the transaction amount in cents (multiply by 100 if needed), positive for purchases or debits, but negative for refunds or credits.
-                \n\nTransaction data:\n\n{transaction_data}
         """
         logger.info(f"this is the prompt {vertexai_prompt}")
 
@@ -186,10 +185,9 @@ class ReportMaker:
         generation_config = GenerationConfig(
             response_mime_type="application/json",
         )
-        
-        response = self.model.generate_content(
-            vertexai_prompt,
-        )
+        response = self.models.generate_content(
+                contents=[transaction_data, prompt]
+            )
         logger.info("Vertex AI request completed")
 
         # Extract JSON from response (might have markdown code blocks)
