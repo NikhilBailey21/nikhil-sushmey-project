@@ -163,20 +163,20 @@ class ReportMaker:
         }
 
         vertexai_prompt = f"""Convert the following transaction data into structured JSON.
-Each row should be a single transaction.
-The description should be copied from the transaction description field.
-The date should be extracted from the transaction data and formatted as YYYY-MM-DD (ISO 8601 format).
-The category should be determined by which category the transaction most closely fits into. Use exactly one of these category values:
-{json.dumps(VALID_CATEGORIES)}
-The amount should be the same as the transaction amount in cents (multiply by 100 if needed), positive for purchases or debits, but negative for refunds or credits.
-\n\nTransaction data:\n\n{transaction_data}
-"""
-
+                Each row should be a single transaction.
+                The description should be copied from the transaction description field.
+                The date should be extracted from the transaction data and formatted as YYYY-MM-DD (ISO 8601 format).
+                The category should be determined by which category the transaction most closely fits into. Use exactly one of these category values:
+                {json.dumps(VALID_CATEGORIES)}
+                Strictly follow this schema: {schema} else it will fail.
+                The amount should be the same as the transaction amount in cents (multiply by 100 if needed), positive for purchases or debits, but negative for refunds or credits.
+                \n\nTransaction data:\n\n{transaction_data}
+        """
+        logger.info(f"this is the prompt {vertexai_prompt}")
         # Use GenerationConfig class with response_schema
         # The schema dict should be passed directly - VertexAI SDK will handle it
         generation_config = GenerationConfig(
             response_mime_type="application/json",
-            response_schema=schema
         )
         
         response = self.model.generate_content(
