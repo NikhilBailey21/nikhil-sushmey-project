@@ -458,63 +458,44 @@ class ReportMaker:
         vertexai_prompt = f"""
         You are a financial data analysis assistant.
 
-        You will be given:
-        1. A list of financial transactions.
-        2. A dictionary of pre-computed metrics derived from these transactions.
+        Input:
+        1) List of transactions
+        2) Dictionary of pre-computed metrics
 
-        Your tasks are:
+        Tasks
+        A) Report Metrics
+        - Output all metrics in clean markdown tables.
+        - Use values exactly as provided.
+        - Missing values → “Not available”.
 
-        (A) Display all provided metrics in a clean markdown report using well-structured tables.
-            - Present metrics exactly as provided.
-            - Do not recompute or invent values.
-            - If a metric is missing, use “Not available”.
+        B) Insights
+        - Create brief, conservative insights based only on provided metrics and transactions.
+        - No speculation about user behavior or motives.
 
-        (B) Generate short, conservative, data-backed insights based only on the provided metrics and transactions.
-            - Insights must be strictly based on observed numerical patterns in the data.
-            - If the data is insufficient for an insight, explicitly write: “Insufficient data”.
-            - Do not speculate on the user’s behavior, motives, preferences, or intents.
-            - Do not infer information that is not directly supported by the data.
-
-        (C) Output format must be a **valid markdown string** that can be rendered as a full standalone report.
-
-        Report Structure (strictly follow this order):
-
+        C) Output
+        Report Structure (in order)
         # Financial Report
 
         ## Summary Metrics
-        (Use a metrics table)
+        (Table)
 
         ## Category Breakdown
-        (Use a table showing category totals, counts, percentages if provided)
+        (Table if provided, else “Not available”)
 
         ## Time-based Metrics
-        (Use tables if time-based metrics exist, otherwise state: “Not available”)
+        (Table if provided, else “Not available”)
 
         ## Insights
-        - Bullet list of insights
-        - Each insight must start with a clear observational fact.
-        - No storytelling. No assumptions.
+        - Bullet list
+        - Each starts with a numeric observation
+        - No storytelling
 
-        Formatting Rules:
-        - Prefer markdown tables for metrics.
-        - Never fabricate or estimate numeric values.
-        - Never describe trends that are not numerically proven.
-        - Do not use speculative language (“may indicate”, “likely”, “probably”).
-
-        Important:
-        - The metrics provided are authoritative and correct. Do not attempt to recalculate them.
-        - If a useful metric is not provided, do not create it yourself.
-        - You may reference individual transactions only to support an insight (e.g., frequency, repetition), but do not summarize all transactions.
-
-        Example safe insight pattern:
-        - “Spending in the ‘Food’ category represents 26 percent of total spending. (Based on provided metrics)”
-
-        Example unsafe patterns (disallowed):
-        - “You like eating out a lot.”
-        - “This trend suggests the user is traveling for work.”
-        - “Probably spent money on vacation.”
-
-        Your final response must contain **only the markdown report**, with no explanation of how you created it.
+        Rules
+        - Metrics are authoritative — do not recalc or invent.
+        - You may reference transactions only to support an insight.
+        - No speculative language (“likely”, “probably”).
+        
+        Final output = markdown only.
 
         """
 
@@ -536,12 +517,12 @@ class ReportMaker:
         }
 
         # Format the complete prompt with instructions and data
-        user_instruction = "Generate the financial report using the provided transaction data and metrics."
+        # user_instruction = "Generate the financial report using the provided transaction data and metrics."
         data_json = json.dumps(report_input, indent=2)
-        complete_prompt = f"{vertexai_prompt}\n\n{user_instruction}\n\nTransaction Data and Metrics:\n{data_json}"
+        # complete_prompt = f"{vertexai_prompt}Transaction Data and Metrics:\n{}"
 
         logger.info("Calling the model to generate the report")
-        response = self.model.generate_content(contents=[complete_prompt])
+        response = self.model.generate_content(contents=[transactions_dict, metrics, vertexai_prompt])
 
         # Extract markdown from response (might have markdown code blocks)
         response_text = response.text.strip()
