@@ -114,19 +114,27 @@ class ReportMaker:
         raise Exception("Failed to convert transaction data to structured JSON after all attempts.")
 
     def _get_csv_string_from_database(self, csv_id: int) -> str:
+        cursor = None
         try:
-            cursor = None
             db = get_db()
             cursor = db.cursor()
-            csv_string = cursor.execute(f"SELECT csv_content FROM uploaded_csvs WHERE id='{csv_id}'")
+            cursor.execute(
+                "SELECT csv_content FROM uploaded_csvs WHERE id = %s",
+                (csv_id,)
+            )
+            row = cursor.fetchone()
+            if not row:
+                raise ValueError(f"No CSV found with id={csv_id}")
+            csv_string = row[0]
             logger.info(f"Successfully fetched the csv_string: {csv_string}")
-            cursor.close()
+            return csv_string
         except Exception as e:
             logger.error(f"ReportMaker failed to connect to db: {e}")
+            raise
+        finally:
             if cursor:
                 cursor.close()
-            raise
-        return csv_string
+
 
     def _convert_transaction_data_to_structured_json(self, transaction_data: str):
         """
