@@ -1,8 +1,8 @@
 # Transaction Analyzer Application
 
-A cloud-native Flask application for analyzing credit card transactions with AI-powered insights. Upload CSV files, track spending patterns, and generate detailed financial reports.
+A cloud-native Flask application for analyzing credit card transactions with AI-powered insights, built from scratch with a complete CI/CD Pipeline and Redis Queue. Allows for uploading CSV files, tracking spending patterns, and generating detailed financial reports.
 
-**Live Application**: https://flaskr-app-707268319983.us-central1.run.app
+**Live Application**: (taken down for the monthly cost of the database, as I am in college) https://flaskr-app-707268319983.us-central1.run.app
 
 ## Architecture Overview
 
